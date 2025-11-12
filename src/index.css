@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.card {
+  @apply bg-panel border border-slate-700/60 rounded-2xl p-4;
+}
+.btn {
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-semibold transition;
+}
+.btn-primary { @apply bg-accent text-white hover:shadow-glow; }
+.btn-ghost { @apply bg-transparent border border-slate-700/60 text-text hover:bg-panel2; }
+.input {
+  @apply w-full rounded-xl bg-panel2 border border-slate-700/60 px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent;
+}
+.label { @apply text-sm text-muted; }
+.kpi { @apply text-3xl font-extrabold; }
