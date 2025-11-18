@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useFinance } from '../context/FinanceContext'
 
-function BudgetCard({ category, limit, spent }){
+function BudgetCard({ category, limit, spent, formatCurrency }){
   const pct = Math.min(100, Math.round((spent/Math.max(1,limit))*100))
   const over = spent > limit
   return (
@@ -12,7 +12,7 @@ function BudgetCard({ category, limit, spent }){
           {over? 'Over':'Under'}
         </div>
       </div>
-      <div className="text-sm text-muted mb-2">Limit: ${Number(limit).toFixed(2)} • Used: {pct}%</div>
+      <div className="text-sm text-muted mb-2">Limit: {formatCurrency(limit)} • Used: {pct}%</div>
       <div className="h-2 bg-panel2 rounded-full overflow-hidden">
         <div className={"h-full "+(over? 'bg-red-500':'bg-accent')} style={{width:`${pct}%`}}/>
       </div>
@@ -21,7 +21,7 @@ function BudgetCard({ category, limit, spent }){
 }
 
 export default function Budgets(){
-  const { state, addBudget } = useFinance()
+  const { state, addBudget, formatCurrency } = useFinance()
   const [form, setForm] = useState({ period: new Date().toISOString().slice(0,7), category:'Food', limit:'' })
   const spentByCategory = useMemo(()=>{
     const map = {}; for(const e of state.expenses){ if(e.date.startsWith(form.period)){ map[e.category]=(map[e.category]||0)+Number(e.amount) } } return map
@@ -46,7 +46,7 @@ export default function Budgets(){
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {state.budgets.filter(b => b.period === form.period).map(b => (
-          <BudgetCard key={b.id} category={b.category} limit={b.limit} spent={spentByCategory[b.category] || 0} />
+          <BudgetCard key={b.id} category={b.category} limit={b.limit} spent={spentByCategory[b.category] || 0} formatCurrency={formatCurrency} />
         ))}
       </div>
     </div>

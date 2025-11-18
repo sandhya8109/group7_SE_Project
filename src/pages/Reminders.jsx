@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useFinance } from '../context/FinanceContext'
 
-function ReminderCard({ title, amount, dueDate, recurring }){
+function ReminderCard({ title, amount, dueDate, recurring, formatCurrency }){
   const daysLeft = Math.ceil((new Date(dueDate) - new Date())/(1000*60*60*24))
   const urgent = daysLeft <= 3
   return (
@@ -11,14 +11,14 @@ function ReminderCard({ title, amount, dueDate, recurring }){
         {urgent && <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300">Due soon</span>}
         <div className="ml-auto text-sm text-muted">{recurring}</div>
       </div>
-      <div className="mt-1 text-2xl font-extrabold">${Number(amount).toFixed(2)}</div>
+      <div className="mt-1 text-2xl font-extrabold">{formatCurrency(amount)}</div>
       <div className="text-sm text-muted">Due {dueDate} • {daysLeft >= 0 ? `${daysLeft} day(s) left` : `Overdue by ${-daysLeft} day(s)`}</div>
     </div>
   )
 }
 
 export default function Reminders(){
-  const { state, addReminder } = useFinance()
+  const { state, addReminder, formatCurrency } = useFinance()
   const [form, setForm] = useState({ title:'', amount:'', dueDate: new Date().toISOString().slice(0,10), recurring:'Monthly' })
   const submit = (e)=>{ e.preventDefault(); if(!form.title || !form.amount) return; addReminder({ ...form, amount: Number(form.amount) }); setForm({ title:'', amount:'', dueDate: new Date().toISOString().slice(0,10), recurring:'Monthly' }) }
   return (
@@ -36,7 +36,7 @@ export default function Reminders(){
         </form>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {state.reminders.map(r => <ReminderCard key={r.id} {...r} />)}
+        {state.reminders.map(r => <ReminderCard key={r.id} {...r} formatCurrency={formatCurrency} />)}
       </div>
     </div>
   )

@@ -5,6 +5,7 @@ import AppLayout from './layouts/AppLayout'
 import AuthLayout from './layouts/AuthLayout'
 import { AuthProvider } from './context/AuthContext'
 import { FinanceProvider } from './context/FinanceContext'
+import { NotificationProvider } from './context/NotificationContext'
 
 import Dashboard from './pages/Dashboard'
 import Expenses from './pages/Expenses'
@@ -21,8 +22,9 @@ export default function App(){
   return (
     <AuthProvider>
       <FinanceProvider>
-        <Routes>
-          <Route path="/login" element={<AuthLayout title="Login"><Login/></AuthLayout>} />
+        <NotificationProvider>
+          <Routes>
+            <Route path="/login" element={<AuthLayout title="Login"><Login/></AuthLayout>} />
           <Route path="/signup" element={<AuthLayout title="Create Account"><Signup/></AuthLayout>} />
           <Route path="/forgot" element={<AuthLayout title="Forgot Password"><Forgot/></AuthLayout>} />
           <Route path="/*" element={
@@ -41,6 +43,7 @@ export default function App(){
             </ProtectedRoute>
           }/>
         </Routes>
+        </NotificationProvider>
       </FinanceProvider>
     </AuthProvider>
   )
