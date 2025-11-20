@@ -2,9 +2,14 @@ import React, { useState } from 'react'
 import { useFinance } from '../context/FinanceContext'
 import { Pencil, Trash2, X } from 'lucide-react'
 
-function ReminderCard({ title, amount, dueDate, recurring, formatCurrency }){
-  const daysLeft = Math.ceil((new Date(dueDate) - new Date())/(1000*60*60*24))
-  const urgent = daysLeft <= 3
+function ReminderCard({ reminder, formatCurrency, onEdit, onDelete }){
+  const daysLeft = Math.ceil((new Date(reminder.dueDate) - new Date())/(1000*60*60*24))
+  const status = daysLeft < 0 ? 'Overdue' : daysLeft === 0 ? 'Due today' : daysLeft <= 3 ? 'Due soon' : ''
+  const chip = status && (
+    <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${daysLeft < 0 ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'}`}>
+      {status}
+    </span>
+  )
   return (
     <div className="card space-y-2">
       <div className="flex items-center gap-2">
@@ -16,16 +21,46 @@ function ReminderCard({ title, amount, dueDate, recurring, formatCurrency }){
           <button className="p-1 rounded hover:bg-panel2" onClick={() => onDelete(reminder)} aria-label="Delete reminder"><Trash2 className="w-4 h-4 text-red-400" /></button>
         </div>
       </div>
-      <div className="mt-1 text-2xl font-extrabold">{formatCurrency(amount)}</div>
-      <div className="text-sm text-muted">Due {dueDate} • {daysLeft >= 0 ? `${daysLeft} day(s) left` : `Overdue by ${-daysLeft} day(s)`}</div>
+      <div className="mt-1 text-2xl font-extrabold">{formatCurrency(reminder.amount)}</div>
+      <div className="text-sm text-muted">Due {reminder.dueDate} • {daysLeft >= 0 ? `${daysLeft} day(s) left` : `Overdue by ${-daysLeft} day(s)`}</div>
+      {reminder.category && <div className="text-xs text-muted">Category: {reminder.category}</div>}
     </div>
   )
 }
 
 export default function Reminders(){
-  const { state, addReminder, formatCurrency } = useFinance()
-  const [form, setForm] = useState({ title:'', amount:'', dueDate: new Date().toISOString().slice(0,10), recurring:'Monthly' })
-  const submit = (e)=>{ e.preventDefault(); if(!form.title || !form.amount) return; addReminder({ ...form, amount: Number(form.amount) }); setForm({ title:'', amount:'', dueDate: new Date().toISOString().slice(0,10), recurring:'Monthly' }) }
+  const { state, addReminder, updateReminder, deleteReminder, formatCurrency } = useFinance()
+  const emptyForm = { title:'', amount:'', dueDate: new Date().toISOString().slice(0,10), recurring:'Monthly', category:'', description:'' }
+  const [form, setForm] = useState(emptyForm)
+  const [editing, setEditing] = useState(null)
+
+  const submit = (e)=>{
+    e.preventDefault()
+    if(!form.title || !form.amount) return
+    if (editing){
+      updateReminder(editing.id, { ...form, amount: Number(form.amount) })
+    } else {
+      addReminder({ ...form, amount: Number(form.amount) })
+    }
+    setForm(emptyForm)
+    setEditing(null)
+  }
+
+  const startEdit = (reminder) => {
+    setEditing(reminder)
+    setForm({ ...reminder, amount: reminder.amount, dueDate: reminder.dueDate })
+  }
+
+  const handleDelete = (reminder) => {
+    if (window.confirm(`Delete reminder "${reminder.title}"?`)){
+      deleteReminder(reminder.id)
+      if (editing?.id === reminder.id){
+        setEditing(null)
+        setForm(emptyForm)
+      }
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="card">
@@ -50,7 +85,15 @@ export default function Reminders(){
         </form>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {state.reminders.map(r => <ReminderCard key={r.id} {...r} formatCurrency={formatCurrency} />)}
+        {state.reminders.map(r => (
+          <ReminderCard
+            key={r.id}
+            reminder={r}
+            formatCurrency={formatCurrency}
+            onEdit={startEdit}
+            onDelete={handleDelete}
+          />
+        ))}
       </div>
     </div>
   )

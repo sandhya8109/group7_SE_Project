@@ -2,9 +2,12 @@ import React from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import NotificationBell from '../components/NotificationBell'
+import { useTheme } from '../context/ThemeContext'
+import { Moon, Sun } from 'lucide-react'
 
 export default function AppLayout({ children }){
   const { user, profile, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const nav = (to, label) => (
     <NavLink to={to} className={({isActive}) => ['block px-3 py-2 rounded-xl', isActive?'bg-panel2 text-white':'text-muted hover:bg-panel2'].join(' ')}>{label}</NavLink>
   )
@@ -26,6 +29,14 @@ export default function AppLayout({ children }){
           <div className="flex items-center gap-2 md:hidden text-lg font-bold">💸 PFBMS</div>
           <div className="flex items-center gap-4 ml-auto">
             <NotificationBell />
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-full hover:bg-panel2"
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              aria-pressed={theme === 'dark'}
+            >
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
             <div className="flex items-center gap-3">
               {profile?.avatar ? (
                 <img src={profile.avatar} alt={profile.name || 'Profile'} className="w-9 h-9 rounded-full object-cover" />

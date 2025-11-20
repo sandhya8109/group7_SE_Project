@@ -40,11 +40,29 @@ const defaultState = {
   ]
 }
 
+const loadState = () => {
+  const raw = localStorage.getItem(LS_KEY)
+  if (!raw) return defaultState
+  try {
+    const parsed = JSON.parse(raw)
+    return {
+      ...defaultState,
+      ...parsed,
+      currency: parsed.currency || defaultState.currency,
+      incomes: parsed.incomes || defaultState.incomes,
+      expenses: parsed.expenses || defaultState.expenses,
+      budgets: parsed.budgets || defaultState.budgets,
+      reminders: parsed.reminders || defaultState.reminders,
+      goals: parsed.goals || defaultState.goals,
+    }
+  } catch (err) {
+    console.warn('Failed to parse finance state, falling back to defaults', err)
+    return defaultState
+  }
+}
+
 export function FinanceProvider({ children }){
-  const [state, setState] = useState(() => {
-    const raw = localStorage.getItem(LS_KEY)
-    return raw ? JSON.parse(raw) : defaultState
-  })
+  const [state, setState] = useState(loadState)
 
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify(state))
@@ -77,8 +95,34 @@ export function FinanceProvider({ children }){
   const addIncome = (income) => setState(s => ({ ...s, incomes: [{ id: crypto.randomUUID(), ...income, amount: toBase(income.amount) }, ...s.incomes] }))
   const removeIncome = (id) => setState(s => ({ ...s, incomes: s.incomes.filter(i => i.id !== id) }))
 
-  const addBudget = (b) => setState(s => ({ ...s, budgets: [{ id: crypto.randomUUID(), ...b, limit: toBase(b.limit) }, ...s.budgets] }))
+  const addBudget = (b) => setState(s => {
+    const baseLimit = toBase(b.limit)
+    let merged = false
+    const budgets = s.budgets.map(budget => {
+      if (budget.period === b.period && budget.category === b.category){
+        merged = true
+        return { ...budget, limit: budget.limit + baseLimit }
+      }
+      return budget
+    })
+    const newBudget = { id: crypto.randomUUID(), ...b, limit: baseLimit }
+    return { ...s, budgets: merged ? budgets : [newBudget, ...s.budgets] }
+  })
+  const updateBudget = (id, updates) => setState(s => ({
+    ...s,
+    budgets: s.budgets.map(b => b.id === id ? {
+      ...b,
+      ...updates,
+      limit: updates.limit !== undefined ? toBase(updates.limit) : b.limit,
+    } : b)
+  }))
+  const deleteBudget = (id) => setState(s => ({ ...s, budgets: s.budgets.filter(b => b.id !== id) }))
   const addReminder = (r) => setState(s => ({ ...s, reminders: [{ id: crypto.randomUUID(), ...r, amount: toBase(r.amount) }, ...s.reminders] }))
+  const updateReminder = (id, updates) => setState(s => ({
+    ...s,
+    reminders: s.reminders.map(rem => rem.id === id ? { ...rem, ...updates, amount: updates.amount !== undefined ? toBase(updates.amount) : rem.amount } : rem)
+  }))
+  const deleteReminder = (id) => setState(s => ({ ...s, reminders: s.reminders.filter(rem => rem.id !== id) }))
   const addGoal = (g) => setState(s => ({ ...s, goals: [{ id: crypto.randomUUID(), ...g, target: toBase(g.target), saved: toBase(g.saved || 0) }, ...s.goals] }))
   const updateGoal = (id, updates) => setState(s => ({
     ...s,
@@ -135,7 +179,11 @@ export function FinanceProvider({ children }){
     addIncome,
     removeIncome,
     addBudget,
+    updateBudget,
+    deleteBudget,
     addReminder,
+    updateReminder,
+    deleteReminder,
     addGoal,
     updateGoal,
     deleteGoal,

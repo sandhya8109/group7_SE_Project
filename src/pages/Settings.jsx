@@ -6,6 +6,7 @@ import { useTheme } from '../context/ThemeContext'
 export default function Settings(){
   const { profile, updateProfile } = useAuth()
   const { state, setState, currencyMap } = useFinance()
+  const { theme, setTheme, toggleTheme } = useTheme()
   const [form, setForm] = useState({ name: profile?.name || '', email: profile?.email || '', avatar: profile?.avatar || '', currency: state.currency })
   const [status, setStatus] = useState('')
 
@@ -70,6 +71,34 @@ export default function Settings(){
           </div>
         </div>
       </form>
+      <div className="card space-y-3">
+        <div>
+          <div className="text-lg font-semibold">Appearance</div>
+          <p className="text-sm text-muted">Switch between dark and light themes to match your environment.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setTheme('dark')}
+            className={`btn ${theme === 'dark' ? 'btn-primary' : 'btn-ghost'}`}
+            aria-pressed={theme === 'dark'}
+          >
+            Dark mode
+          </button>
+          <button
+            type="button"
+            onClick={() => setTheme('light')}
+            className={`btn ${theme === 'light' ? 'btn-primary' : 'btn-ghost'}`}
+            aria-pressed={theme === 'light'}
+          >
+            Light mode
+          </button>
+          <button type="button" onClick={toggleTheme} className="btn btn-ghost text-sm">
+            Toggle
+          </button>
+        </div>
+        <div className="text-xs text-muted">Your choice is saved locally so the app re-opens in the same mode.</div>
+      </div>
       <div className="card">
         <div className="mb-2 font-semibold">Data</div>
         <button className="btn btn-ghost" onClick={reset}>Reset Demo Data</button>
