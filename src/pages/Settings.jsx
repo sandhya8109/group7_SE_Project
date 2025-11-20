@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useFinance } from '../context/FinanceContext'
+import { useTheme } from '../context/ThemeContext'
 
 export default function Settings(){
   const { profile, updateProfile } = useAuth()
