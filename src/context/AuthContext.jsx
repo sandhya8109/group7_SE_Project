@@ -5,6 +5,7 @@ import { loginApi, signupApi, meApi } from '../api/auth'
 const AuthCtx = createContext()
 const SESSION_KEY = 'pfbms-session' // {token,user}
 const PROFILE_KEY = 'pfbms-profile-v1'
+const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
 
 export function AuthProvider({ children }){
   const [session, setSession] = useState(null)
@@ -21,6 +22,12 @@ export function AuthProvider({ children }){
       const s = JSON.parse(saved)
       setSession(s)
       setProfile(p => ({ ...p, email: s.user?.email || p.email || '' }))
+    } else if (USE_MOCK) {
+      // Auto-provision a demo session so the UI is immediately usable with mock APIs
+      const demo = { token: 'demo-token', user: { email: 'demo@pfbms.local' } }
+      localStorage.setItem(SESSION_KEY, JSON.stringify(demo))
+      setSession(demo)
+      setProfile(p => ({ ...p, email: demo.user.email }))
     }
     setLoading(false)
   }, [])

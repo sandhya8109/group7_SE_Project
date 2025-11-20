@@ -27,25 +27,24 @@ export default function App(){
           <NotificationProvider>
             <Routes>
               <Route path="/login" element={<AuthLayout title="Login"><Login/></AuthLayout>} />
-              <Route path="/signup" element={<AuthLayout title="Create Account"><Signup/></AuthLayout>} />
-              <Route path="/forgot" element={<AuthLayout title="Forgot Password"><Forgot/></AuthLayout>} />
-
-              <Route path="/*" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <Routes>
-                      <Route path="/" element={<Dashboard/>} />
-                      <Route path="/expenses" element={<Expenses/>} />
-                      <Route path="/budgets" element={<Budgets/>} />
-                      <Route path="/goals" element={<Goals/>} />
-                      <Route path="/reminders" element={<Reminders/>} />
-                      <Route path="/reports" element={<Reports/>} />
-                      <Route path="/settings" element={<Settings/>} />
-                    </Routes>
-                  </AppLayout>
-                </ProtectedRoute>
-              }/>
-            </Routes>
+            <Route path="/signup" element={<AuthLayout title="Create Account"><Signup/></AuthLayout>} />
+            <Route path="/forgot" element={<AuthLayout title="Forgot Password"><Forgot/></AuthLayout>} />
+            <Route path="/*" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Routes>
+                    <Route path="/" element={<Dashboard/>} />
+                    <Route path="/expenses" element={<Expenses/>} />
+                    <Route path="/budgets" element={<Budgets/>} />
+                    <Route path="/goals" element={<Goals/>} />
+                    <Route path="/reminders" element={<Reminders/>} />
+                    <Route path="/reports" element={<Reports/>} />
+                    <Route path="/settings" element={<Settings/>} />
+                  </Routes>
+                </AppLayout>
+              </ProtectedRoute>
+            }/>
+          </Routes>
           </NotificationProvider>
         </FinanceProvider>
       </AuthProvider>
