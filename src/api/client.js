@@ -1,4 +1,6 @@
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+// Default to mock APIs so the app works out of the box without a backend.
+// Set VITE_USE_MOCK="false" to force real API calls.
+const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
 function delay(ms){ return new Promise(r=>setTimeout(r, ms)) }
