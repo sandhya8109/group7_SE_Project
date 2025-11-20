@@ -51,21 +51,18 @@ export function NotificationProvider({ children }){
       }
     }
 
-    const reminderStatuses = state.reminders.map(rem => {
+    const upcomingBills = state.reminders.filter(rem => {
       const due = new Date(rem.dueDate)
-      const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24))
-      if (diffDays < 0) return { ...rem, status: 'overdue', diffDays }
-      if (diffDays === 0) return { ...rem, status: 'due-today', diffDays }
-      if (diffDays <= 7) return { ...rem, status: 'due-soon', diffDays }
-      return { ...rem, status: 'later', diffDays }
-    }).filter(rem => ['overdue','due-today','due-soon'].includes(rem.status))
-
-    for(const bill of reminderStatuses){
-      const label = bill.status === 'overdue' ? 'was due' : bill.status === 'due-today' ? 'is due today' : `is due in ${bill.diffDays} day${bill.diffDays === 1 ? '' : 's'}`
+      const diff = (due - now) / (1000 * 60 * 60 * 24)
+      return diff >= 0 && diff <= 7
+    })
+    for(const bill of upcomingBills){
+      const due = new Date(bill.dueDate)
+      const diff = Math.ceil((due - now) / (1000*60*60*24))
       alerts.push({
         id: `bill-${bill.id}`,
-        type: bill.status,
-        message: `${bill.title} (${formatCurrency(bill.amount)}) ${label}.`,
+        type: 'upcoming-bill',
+        message: `${bill.title} (${formatCurrency(bill.amount)}) is due in ${diff} day${diff === 1 ? '' : 's'}.`,
         date: bill.dueDate,
         read: false
       })

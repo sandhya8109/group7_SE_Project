@@ -79,11 +79,6 @@ export function FinanceProvider({ children }){
 
   const addBudget = (b) => setState(s => ({ ...s, budgets: [{ id: crypto.randomUUID(), ...b, limit: toBase(b.limit) }, ...s.budgets] }))
   const addReminder = (r) => setState(s => ({ ...s, reminders: [{ id: crypto.randomUUID(), ...r, amount: toBase(r.amount) }, ...s.reminders] }))
-  const updateReminder = (id, updates) => setState(s => ({
-    ...s,
-    reminders: s.reminders.map(rem => rem.id === id ? { ...rem, ...updates, amount: updates.amount !== undefined ? toBase(updates.amount) : rem.amount } : rem)
-  }))
-  const deleteReminder = (id) => setState(s => ({ ...s, reminders: s.reminders.filter(rem => rem.id !== id) }))
   const addGoal = (g) => setState(s => ({ ...s, goals: [{ id: crypto.randomUUID(), ...g, target: toBase(g.target), saved: toBase(g.saved || 0) }, ...s.goals] }))
   const updateGoal = (id, updates) => setState(s => ({
     ...s,
@@ -141,8 +136,6 @@ export function FinanceProvider({ children }){
     removeIncome,
     addBudget,
     addReminder,
-    updateReminder,
-    deleteReminder,
     addGoal,
     updateGoal,
     deleteGoal,
