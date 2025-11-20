@@ -2,6 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
+body {
+  @apply bg-bg text-text;
+}
+
+body.theme-dark {
+  background-color: #0f172a;
+  color: #e5e7eb;
+}
+
+body.theme-light {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+body.theme-light .bg-bg { background-color: #f8fafc !important; color: #0f172a; }
+body.theme-light .bg-panel { background-color: #ffffff !important; border-color: #e2e8f0 !important; }
+body.theme-light .bg-panel2 { background-color: #f1f5f9 !important; border-color: #e2e8f0 !important; }
+body.theme-light .text-text { color: #0f172a !important; }
+body.theme-light .text-muted { color: #475569 !important; }
+body.theme-light .border-slate-700\/60 { border-color: #e2e8f0 !important; }
+body.theme-light .btn-ghost { color: #0f172a !important; }
+body.theme-light .input { color: #0f172a !important; }
+
 .card {
   @apply bg-panel border border-slate-700/60 rounded-2xl p-4;
 }
