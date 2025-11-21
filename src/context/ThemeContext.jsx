@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useLayoutEffect, useMemo, useState } from 'react'
+import React, { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from 'react'
 
 const ThemeCtx = createContext()
 const STORAGE_KEY = 'pfbms-theme'
@@ -27,9 +27,14 @@ export function ThemeProvider({ children }){
     localStorage.setItem(STORAGE_KEY, theme)
   }, [theme])
 
-  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
+  const setDark = useCallback(() => setTheme('dark'), [])
+  const setLight = useCallback(() => setTheme('light'), [])
+  const toggleTheme = useCallback(() => setTheme(t => t === 'dark' ? 'light' : 'dark'), [])
 
-  const value = useMemo(() => ({ theme, toggleTheme, setTheme }), [theme])
+  const value = useMemo(
+    () => ({ theme, toggleTheme, setTheme, setDark, setLight }),
+    [theme, toggleTheme, setDark, setLight]
+  )
 
   return (
     <ThemeCtx.Provider value={value}>
