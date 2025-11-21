@@ -1,8 +1,3 @@
-diff --git a/Readme.md b/Readme.md
-index a00fea9676da24e0d663611b9d4ea25c23c49edf..e99ab25e315e7873cf73537e35e619881d737537 100644
---- a/Readme.md
-+++ b/Readme.md
-@@ -1,5 +1,75 @@
 -Requirements:
 -Python
 -Flask 
