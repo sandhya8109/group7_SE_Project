@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 import os
 from functools import wraps
+import uuid
 
 # Import PyMySQL
 import pymysql.cursors
@@ -19,7 +20,7 @@ CORS(app)
 # Database Configuration (Using environment variables with local defaults)
 app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
 app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'root')
-app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', 'password') 
+app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', 'password') # IMPORTANT: Replace with your actual password
 app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', 'personal_finance')
 app.config['DATABASE_POOL_SIZE'] = 10 # For demonstration, though PyMySQL doesn't handle pooling directly in this setup
 
@@ -103,6 +104,100 @@ def handle_db_error(func):
     return wrapper
 
 
+# ==================== AUTH ENDPOINTS ====================
+
+# FIXED: Changed paths from /auth/... to /api/auth/...
+@app.route('/api/auth/signup', methods=['POST'])
+@handle_db_error
+def signup():
+    """Register a new user, generating user_id server-side."""
+    data = request.get_json()
+    
+    required_fields = ['email', 'password']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields (email, password)'}), 400
+    
+    user_id = str(uuid.uuid4())
+    name = data.get('name', data['email'].split('@')[0]) # Default name to email prefix
+    password_hash = generate_password_hash(data['password'])
+
+    # Check if email already exists
+    check_query = "SELECT user_id FROM user WHERE email = %s"
+    if execute_db_query(check_query, (data['email'],), fetch_one=True):
+        return jsonify({'error': 'Email already registered'}), 409
+
+    insert_query = """
+        INSERT INTO user (user_id, name, email, password_hash)
+        VALUES (%s, %s, %s, %s)
+    """
+    params = (user_id, name, data['email'], password_hash)
+    
+    result = execute_db_query(insert_query, params, commit=True)
+    
+    if result.get('rowcount', 0) > 0:
+        # Successful signup returns user info and a 'token' (which is the user_id for simplicity)
+        return jsonify({
+            'message': 'User created successfully',
+            'token': user_id,
+            'user': {'user_id': user_id, 'email': data['email'], 'name': name}
+        }), 201
+    return jsonify({'error': 'Failed to create user'}), 500
+
+
+# FIXED: Changed paths from /auth/... to /api/auth/...
+@app.route('/api/auth/login', methods=['POST'])
+@handle_db_error
+def login():
+    """Authenticate a user and return a token (user_id)."""
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+    
+    if not email or not password:
+        return jsonify({'error': 'Missing email or password'}), 400
+
+    # 1. Fetch user by email
+    query = "SELECT user_id, name, email, password_hash FROM user WHERE email = %s"
+    user = execute_db_query(query, (email,), fetch_one=True)
+
+    if not user:
+        # Use generic failure message for security
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    # 2. Check password
+    if check_password_hash(user['password_hash'], password):
+        # Authentication successful: Return token (user_id) and essential user details
+        return jsonify({
+            # The token is the user_id, which the client will use for 'me' and other API calls
+            'token': user['user_id'], 
+            'user': {'user_id': user['user_id'], 'email': user['email'], 'name': user['name']}
+        }), 200
+    else:
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+# FIXED: Changed paths from /auth/... to /api/auth/...
+@app.route('/api/auth/me', methods=['GET'])
+@handle_db_error
+def me():
+    """Retrieve current user info based on Authorization header (User ID as Bearer Token)."""
+    # We assume the Bearer token IS the user_id for simple session management
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Authorization token required'}), 401
+    
+    # Extract user_id from "Bearer <user_id>"
+    user_id = auth_header.split(' ')[1]
+    
+    query = "SELECT user_id, name, email FROM user WHERE user_id = %s"
+    user = execute_db_query(query, (user_id,), fetch_one=True)
+
+    if user:
+        return jsonify({'user': user}), 200
+    
+    # If the user_id from the token is invalid
+    return jsonify({'error': 'Invalid or expired token'}), 401
+
+
 # ==================== USER ENDPOINTS ====================
 
 @app.route('/api/users', methods=['GET'])
@@ -127,7 +222,7 @@ def get_user(user_id):
 @app.route('/api/users', methods=['POST'])
 @handle_db_error
 def create_user():
-    """Create new user"""
+    """Create new user (requires user_id in body, generally used for initial setup/testing)"""
     data = request.get_json()
     
     required_fields = ['user_id', 'name', 'email', 'password']
