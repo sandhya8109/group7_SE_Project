@@ -97,16 +97,15 @@ export function FinanceProvider({ children }){
 
   const addBudget = (b) => setState(s => {
     const baseLimit = toBase(b.limit)
-    let merged = false
-    const budgets = s.budgets.map(budget => {
-      if (budget.period === b.period && budget.category === b.category){
-        merged = true
-        return { ...budget, limit: budget.limit + baseLimit }
+    const existing = s.budgets.find(budget => budget.period === b.period && budget.category === b.category)
+    if (existing){
+      return {
+        ...s,
+        budgets: s.budgets.map(budget => budget.id === existing.id ? { ...budget, ...b, limit: baseLimit } : budget)
       }
-      return budget
-    })
+    }
     const newBudget = { id: crypto.randomUUID(), ...b, limit: baseLimit }
-    return { ...s, budgets: merged ? budgets : [newBudget, ...s.budgets] }
+    return { ...s, budgets: [newBudget, ...s.budgets] }
   })
   const updateBudget = (id, updates) => setState(s => ({
     ...s,

@@ -65,6 +65,8 @@ export default function Budgets(){
     }
   }
 
+  const budgetsForPeriod = state.budgets.filter(b => b.period === form.period)
+
   return (
     <div className="space-y-4">
       <div className="card">
@@ -87,19 +89,25 @@ export default function Budgets(){
           </div>
         </form>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {state.budgets.filter(b => b.period === form.period).map(b => (
-          <BudgetCard
-            key={b.id}
-            category={b.category}
-            limit={b.limit}
-            spent={spentByCategory[b.category] || 0}
-            formatCurrency={formatCurrency}
-            onEdit={() => startEdit(b)}
-            onDelete={() => handleDelete(b)}
-          />
-        ))}
-      </div>
+      {budgetsForPeriod.length === 0 ? (
+        <div className="card bg-panel2 text-sm text-muted">
+          No budgets for this month yet. Add one above to unlock edit/delete actions.
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {budgetsForPeriod.map(b => (
+            <BudgetCard
+              key={b.id}
+              category={b.category}
+              limit={b.limit}
+              spent={spentByCategory[b.category] || 0}
+              formatCurrency={formatCurrency}
+              onEdit={() => startEdit(b)}
+              onDelete={() => handleDelete(b)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
