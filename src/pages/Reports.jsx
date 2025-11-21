@@ -18,7 +18,12 @@ export default function Reports(){
     }
     return Array.from(keys).sort().reverse()
   }, [state.incomes, state.expenses])
-  const monthOptions = availableMonths.length ? availableMonths : [selectedMonth]
+  const monthOptions = useMemo(() => {
+    const year = selectedMonth.slice(0,4) || new Date().getFullYear().toString()
+    const fullYearMonths = Array.from({ length: 12 }, (_, idx) => `${year}-${String(idx + 1).padStart(2,'0')}`)
+    const options = new Set([...fullYearMonths, ...availableMonths, selectedMonth])
+    return Array.from(options).sort().reverse()
+  }, [availableMonths, selectedMonth])
 
   const categoryData = useMemo(()=>{
     const m = {}; for(const e of state.expenses){ m[e.category]=(m[e.category]||0)+fromBase(e.amount) }

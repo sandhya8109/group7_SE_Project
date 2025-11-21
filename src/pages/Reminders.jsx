@@ -29,10 +29,11 @@ function ReminderCard({ reminder, formatCurrency, onEdit, onDelete }){
 }
 
 export default function Reminders(){
-  const { state, addReminder, updateReminder, deleteReminder, formatCurrency } = useFinance()
+  const { state, addReminder, updateReminder, deleteReminder, formatCurrency, fromBase } = useFinance()
   const emptyForm = { title:'', amount:'', dueDate: new Date().toISOString().slice(0,10), recurring:'Monthly', category:'', description:'' }
   const [form, setForm] = useState(emptyForm)
   const [editing, setEditing] = useState(null)
+  const reminders = [...state.reminders].sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate))
 
   const submit = (e)=>{
     e.preventDefault()
@@ -48,7 +49,7 @@ export default function Reminders(){
 
   const startEdit = (reminder) => {
     setEditing(reminder)
-    setForm({ ...reminder, amount: reminder.amount, dueDate: reminder.dueDate })
+    setForm({ ...reminder, amount: fromBase(reminder.amount), dueDate: reminder.dueDate })
   }
 
   const handleDelete = (reminder) => {
@@ -84,17 +85,21 @@ export default function Reminders(){
           <button className="btn btn-primary md:col-span-6">{editing ? 'Save Changes' : 'Add Reminder'}</button>
         </form>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {state.reminders.map(r => (
-          <ReminderCard
-            key={r.id}
-            reminder={r}
-            formatCurrency={formatCurrency}
-            onEdit={startEdit}
-            onDelete={handleDelete}
-          />
-        ))}
-      </div>
+      {reminders.length === 0 ? (
+        <div className="card bg-panel2 text-sm text-muted">No reminders yet. Add one above to start tracking due dates.</div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {reminders.map(r => (
+            <ReminderCard
+              key={r.id}
+              reminder={r}
+              formatCurrency={formatCurrency}
+              onEdit={startEdit}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

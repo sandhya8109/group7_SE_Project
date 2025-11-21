@@ -6,7 +6,7 @@ import { useTheme } from '../context/ThemeContext'
 export default function Settings(){
   const { profile, updateProfile } = useAuth()
   const { state, setState, currencyMap } = useFinance()
-  const { theme, setTheme, toggleTheme } = useTheme()
+  const { theme, setDark, setLight, toggleTheme } = useTheme()
   const [form, setForm] = useState({ name: profile?.name || '', email: profile?.email || '', avatar: profile?.avatar || '', currency: state.currency })
   const [status, setStatus] = useState('')
 
@@ -79,7 +79,7 @@ export default function Settings(){
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setTheme('dark')}
+            onClick={setDark}
             className={`btn ${theme === 'dark' ? 'btn-primary' : 'btn-ghost'}`}
             aria-pressed={theme === 'dark'}
           >
@@ -87,7 +87,7 @@ export default function Settings(){
           </button>
           <button
             type="button"
-            onClick={() => setTheme('light')}
+            onClick={setLight}
             className={`btn ${theme === 'light' ? 'btn-primary' : 'btn-ghost'}`}
             aria-pressed={theme === 'light'}
           >
