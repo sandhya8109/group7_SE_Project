@@ -29,7 +29,7 @@ function ReminderCard({ reminder, formatCurrency, onEdit, onDelete }){
 }
 
 export default function Reminders(){
-  const { state, addReminder, updateReminder, deleteReminder, formatCurrency } = useFinance()
+  const { state, addReminder, updateReminder, deleteReminder, formatCurrency, fromBase } = useFinance()
   const emptyForm = { title:'', amount:'', dueDate: new Date().toISOString().slice(0,10), recurring:'Monthly', category:'', description:'' }
   const [form, setForm] = useState(emptyForm)
   const [editing, setEditing] = useState(null)
@@ -49,7 +49,7 @@ export default function Reminders(){
 
   const startEdit = (reminder) => {
     setEditing(reminder)
-    setForm({ ...reminder, amount: reminder.amount, dueDate: reminder.dueDate })
+    setForm({ ...reminder, amount: fromBase(reminder.amount), dueDate: reminder.dueDate })
   }
 
   const handleDelete = (reminder) => {
