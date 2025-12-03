@@ -3,13 +3,14 @@
 from flask import Flask, request, jsonify, current_app, g
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+import calendar
+from datetime import date, datetime, timedelta
+from dateutil.relativedelta import relativedelta
 import json
 import os
 from functools import wraps
 import uuid
-
-# Import PyMySQL
+import jwt 
 import pymysql.cursors
 
 app = Flask(__name__)
@@ -104,6 +105,60 @@ def handle_db_error(func):
     return wrapper
 
 
+# --- Configuration for Token (You need to set a SECRET_KEY) ---
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'your_strong_secret_key') 
+
+# --- Helper Function for Token Validation ---
+def get_user_by_token(token):
+    """
+    Decodes the token and attempts to retrieve the user_id. 
+    (Assuming token is a simple JWT for a slightly more robust example)
+    """
+    try:
+        # Decode the token using your secret key
+        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+        # In a real system, you'd check token expiration here
+        
+        # Check if the user exists in the database
+        user_query = "SELECT user_id, email FROM user WHERE user_id = %s"
+        user_data = execute_db_query(user_query, (payload['user_id'],), fetch_one=True)
+        return user_data 
+        
+    except jwt.ExpiredSignatureError:
+        # Handle expired token
+        return None
+    except jwt.InvalidTokenError:
+        # Handle invalid signature or malformed token
+        return None
+    except Exception:
+        # Handle other errors (e.g., database connection issues)
+        return None
+
+
+# --- Security Decorator ---
+def require_token(f):
+    """Decorator to require a valid Bearer Token for API access and set g.user_id."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token is missing or invalid format'}), 401
+
+        token = auth_header.split(' ')[1]
+        
+        user_data = get_user_by_token(token)
+        
+        if not user_data:
+            return jsonify({'error': 'Invalid or expired token'}), 401
+
+        # Store the authenticated user's ID for use in the endpoint
+        g.authenticated_user_id = user_data['user_id']
+        
+        return f(*args, **kwargs)
+    return decorated
+
+
 # ==================== AUTH ENDPOINTS ====================
 
 # FIXED: Changed paths from /auth/... to /api/auth/...
@@ -144,11 +199,11 @@ def signup():
     return jsonify({'error': 'Failed to create user'}), 500
 
 
-# FIXED: Changed paths from /auth/... to /api/auth/...
+
 @app.route('/api/auth/login', methods=['POST'])
 @handle_db_error
 def login():
-    """Authenticate a user and return a token (user_id)."""
+    """Authenticate a user and return a JWT token."""
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
@@ -161,21 +216,31 @@ def login():
     user = execute_db_query(query, (email,), fetch_one=True)
 
     if not user:
-        # Use generic failure message for security
         return jsonify({'error': 'Invalid credentials'}), 401
 
     # 2. Check password
     if check_password_hash(user['password_hash'], password):
-        # Authentication successful: Return token (user_id) and essential user details
+        
+        # 3. JWT GENERATION (NEW)
+        payload = {
+            'user_id': user['user_id'],
+            # Token expires 24 hours from now
+            'exp': datetime.utcnow() + timedelta(hours=24), 
+            'iat': datetime.utcnow()
+        }
+        # Encode the payload into a token
+        token = jwt.encode(payload, current_app.config['SECRET_KEY'], algorithm="HS256")
+        
+        # 4. Return the token and essential user details
         return jsonify({
-            # The token is the user_id, which the client will use for 'me' and other API calls
-            'token': user['user_id'], 
+            # JWT token is the new secure token
+            'token': token, 
             'user': {'user_id': user['user_id'], 'email': user['email'], 'name': user['name']}
         }), 200
     else:
         return jsonify({'error': 'Invalid credentials'}), 401
 
-# FIXED: Changed paths from /auth/... to /api/auth/...
+
 @app.route('/api/auth/me', methods=['GET'])
 @handle_db_error
 def me():
@@ -291,99 +356,153 @@ def delete_user(user_id):
 
 # ==================== TRANSACTION ENDPOINTS ====================
 
-@app.route('/api/transactions', methods=['GET'])
+@app.route('/api/transactions/<user_id>', methods=['GET'])
 @handle_db_error
-def get_transactions():
-    """Get all transactions with optional user_id filter"""
-    user_id = request.args.get('user_id')
-    
-    query = "SELECT * FROM transaction"
-    params = None
-    
-    if user_id:
-        query += " WHERE user_id = %s"
-        params = (user_id,)
-        
-    query += " ORDER BY date DESC"
-    
-    transactions = execute_db_query(query, params)
+@require_token
+def get_transactions(user_id):
+    """Fetch all transactions for a specific user."""
+    query = """
+        SELECT transaction_id AS id, user_id, type, amount, date, category, description, receipt_data
+        FROM transaction 
+        WHERE user_id = %s
+        ORDER BY date DESC
+    """
+    transactions = execute_db_query(query, (user_id,))
+    # Ensure date fields are in a format the frontend expects (or handle conversion client-side)
     return jsonify(transactions), 200
-
-
-@app.route('/api/transactions/<transaction_id>', methods=['GET'])
-@handle_db_error
-def get_transaction(transaction_id):
-    """Get single transaction"""
-    query = "SELECT * FROM transaction WHERE transaction_id = %s"
-    transaction = execute_db_query(query, (transaction_id,), fetch_one=True)
-    
-    if transaction:
-        return jsonify(transaction), 200
-    return jsonify({'error': 'Transaction not found'}), 404
-
 
 @app.route('/api/transactions', methods=['POST'])
 @handle_db_error
+@require_token
 def create_transaction():
-    """Create new transaction"""
-    data = request.get_json()
-    
-    required_fields = ['transaction_id', 'user_id', 'amount', 'date', 'type']
+    """Create a new transaction (Income or Expense)."""
+    data = request.json
+    required_fields = ['user_id', 'type', 'amount', 'date']
     if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
+        return jsonify({'error': 'Missing required transaction fields'}), 400
     
+    transaction_id = str(uuid.uuid4())
     query = """
         INSERT INTO transaction 
-        (transaction_id, user_id, amount, category, date, description, type) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        (transaction_id, user_id, type, amount, date, category, description, receipt_data)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     """
     params = (
-        data['transaction_id'], data['user_id'], data['amount'],
-        data.get('category'), data['date'], data.get('description'), data['type']
+        transaction_id, data['user_id'], data['type'], data['amount'], 
+        data['date'], data.get('category'), data.get('description'), data.get('receipt_data')
     )
     
     execute_db_query(query, params, commit=True)
-    return jsonify({'message': 'Transaction created successfully'}), 201
-
-
-@app.route('/api/transactions/<transaction_id>', methods=['PUT'])
-@handle_db_error
-def update_transaction(transaction_id):
-    """Update transaction"""
-    data = request.get_json()
-    
-    update_fields = []
-    values = []
-    
-    for field in ['amount', 'category', 'date', 'description', 'type']:
-        if field in data:
-            update_fields.append(f"{field} = %s")
-            values.append(data[field])
-    
-    if not update_fields:
-        return jsonify({'error': 'No fields to update'}), 400
-    
-    values.append(transaction_id)
-    query = f"UPDATE transaction SET {', '.join(update_fields)} WHERE transaction_id = %s"
-    
-    result = execute_db_query(query, tuple(values), commit=True)
-    
-    if result.get('rowcount', 0) > 0:
-        return jsonify({'message': 'Transaction updated successfully'}), 200
-    return jsonify({'error': 'Transaction not found or no changes made'}), 404
-
+    return jsonify({'message': 'Transaction created successfully', 'id': transaction_id}), 201
 
 @app.route('/api/transactions/<transaction_id>', methods=['DELETE'])
 @handle_db_error
+@require_token
 def delete_transaction(transaction_id):
-    """Delete transaction"""
-    query = "DELETE FROM transaction WHERE transaction_id = %s"
-    result = execute_db_query(query, (transaction_id,), commit=True)
+    """Delete a transaction."""
+    # Assuming user_id is passed as a query param for authorization
+    user_id = request.args.get('user_id') 
+    if not user_id:
+        return jsonify({'error': 'User ID required for authorization'}), 400
+        
+    query = "DELETE FROM transaction WHERE transaction_id = %s AND user_id = %s"
+    result = execute_db_query(query, (transaction_id, user_id), commit=True)
     
     if result.get('rowcount', 0) > 0:
         return jsonify({'message': 'Transaction deleted successfully'}), 200
-    return jsonify({'error': 'Transaction not found'}), 404
+    return jsonify({'error': 'Transaction not found or unauthorized'}), 404
 
+
+# ==================== REMINDER ENDPOINTS ====================
+
+@app.route('/api/reminders/<user_id>', methods=['GET'])
+@handle_db_error
+@require_token
+def get_reminders(user_id):
+    """Fetch all reminders for a specific user."""
+    query = """
+        SELECT reminder_id AS id, user_id, title, category, description, amount, due_date AS dueDate, recurring
+        FROM reminder 
+        WHERE user_id = %s
+        ORDER BY due_date ASC
+    """
+    reminders = execute_db_query(query, (user_id,))
+    return jsonify(reminders), 200
+
+@app.route('/api/reminders', methods=['POST'])
+@handle_db_error
+@require_token
+def create_reminder():
+    """Create a new reminder."""
+    data = request.json
+    required_fields = ['user_id', 'title', 'amount', 'dueDate', 'recurring']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required reminder fields'}), 400
+    
+    reminder_id = str(uuid.uuid4())
+    query = """
+        INSERT INTO reminder 
+        (reminder_id, user_id, title, category, description, amount, due_date, recurring)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    params = (
+        reminder_id, data['user_id'], data['title'], data.get('category'), 
+        data.get('description'), data['amount'], data['dueDate'], data['recurring']
+    )
+    
+    execute_db_query(query, params, commit=True)
+    return jsonify({'message': 'Reminder created successfully', 'id': reminder_id}), 201
+
+@app.route('/api/reminders/<reminder_id>', methods=['PUT'])
+@handle_db_error
+@require_token
+def update_reminder(reminder_id):
+    """Update an existing reminder."""
+    data = request.json
+    
+    field_mapping = {
+        'dueDate': 'due_date',
+        'title': 'title',
+        'category': 'category',
+        'description': 'description',
+        'amount': 'amount',
+        'recurring': 'recurring'
+    }
+    
+    update_fields = []
+    params = []
+    for frontend_key, db_column in field_mapping.items():
+        if frontend_key in data and frontend_key not in ['user_id', 'id']:
+            update_fields.append(f"{db_column} = %s")
+            params.append(data[frontend_key])
+    
+    if not update_fields:
+        return jsonify({'error': 'No fields provided for update'}), 400
+
+    query = f"UPDATE reminder SET {', '.join(update_fields)} WHERE reminder_id = %s AND user_id = %s"
+    params.extend([reminder_id, data.get('user_id')])
+
+    result = execute_db_query(query, tuple(params), commit=True)
+    if result.get('rowcount', 0) > 0:
+        return jsonify({'message': 'Reminder updated successfully'}), 200
+    return jsonify({'error': 'Reminder not found or unauthorized'}), 404
+
+@app.route('/api/reminders/<reminder_id>', methods=['DELETE'])
+@handle_db_error
+@require_token
+def delete_reminder(reminder_id):
+    """Delete a reminder."""
+    # Assuming user_id is passed as a query param for authorization
+    user_id = g.authenticated_user_id
+    if not user_id:
+        return jsonify({'error': 'User ID required for authorization'}), 400
+
+    query = "DELETE FROM reminder WHERE reminder_id = %s AND user_id = %s"
+    result = execute_db_query(query, (reminder_id, user_id), commit=True)
+    
+    if result.get('rowcount', 0) > 0:
+        return jsonify({'message': 'Reminder deleted successfully'}), 200
+    return jsonify({'error': 'Reminder not found or unauthorized'}), 404
 
 # ==================== BUDGET ENDPOINTS ====================
 
@@ -477,98 +596,6 @@ def delete_budget(budget_id):
         return jsonify({'message': 'Budget deleted successfully'}), 200
     return jsonify({'error': 'Budget not found'}), 404
 
-
-# ==================== INVESTMENT ENDPOINTS ====================
-
-@app.route('/api/investments', methods=['GET'])
-@handle_db_error
-def get_investments():
-    """Get all investments with optional user_id filter"""
-    user_id = request.args.get('user_id')
-    
-    query = "SELECT * FROM investment"
-    params = None
-    if user_id:
-        query += " WHERE user_id = %s"
-        params = (user_id,)
-    
-    investments = execute_db_query(query, params)
-    return jsonify(investments), 200
-
-
-@app.route('/api/investments/<investment_id>', methods=['GET'])
-@handle_db_error
-def get_investment(investment_id):
-    """Get single investment"""
-    query = "SELECT * FROM investment WHERE investment_id = %s"
-    investment = execute_db_query(query, (investment_id,), fetch_one=True)
-    
-    if investment:
-        return jsonify(investment), 200
-    return jsonify({'error': 'Investment not found'}), 404
-
-
-@app.route('/api/investments', methods=['POST'])
-@handle_db_error
-def create_investment():
-    """Create new investment"""
-    data = request.get_json()
-    
-    required_fields = ['investment_id', 'user_id', 'name', 'type', 'amount', 'purchase_date']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    query = """
-        INSERT INTO investment 
-        (investment_id, user_id, name, type, amount, purchase_date, current_value) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """
-    params = (
-        data['investment_id'], data['user_id'], data['name'], data['type'],
-        data['amount'], data['purchase_date'], data.get('current_value')
-    )
-    
-    execute_db_query(query, params, commit=True)
-    return jsonify({'message': 'Investment created successfully'}), 201
-
-
-@app.route('/api/investments/<investment_id>', methods=['PUT'])
-@handle_db_error
-def update_investment(investment_id):
-    """Update investment"""
-    data = request.get_json()
-    
-    update_fields = []
-    values = []
-    
-    for field in ['name', 'type', 'amount', 'purchase_date', 'current_value']:
-        if field in data:
-            update_fields.append(f"{field} = %s")
-            values.append(data[field])
-    
-    if not update_fields:
-        return jsonify({'error': 'No fields to update'}), 400
-    
-    values.append(investment_id)
-    query = f"UPDATE investment SET {', '.join(update_fields)} WHERE investment_id = %s"
-    
-    result = execute_db_query(query, tuple(values), commit=True)
-    
-    if result.get('rowcount', 0) > 0:
-        return jsonify({'message': 'Investment updated successfully'}), 200
-    return jsonify({'error': 'Investment not found or no changes made'}), 404
-
-
-@app.route('/api/investments/<investment_id>', methods=['DELETE'])
-@handle_db_error
-def delete_investment(investment_id):
-    """Delete investment"""
-    query = "DELETE FROM investment WHERE investment_id = %s"
-    result = execute_db_query(query, (investment_id,), commit=True)
-    
-    if result.get('rowcount', 0) > 0:
-        return jsonify({'message': 'Investment deleted successfully'}), 200
-    return jsonify({'error': 'Investment not found'}), 404
 
 
 # ==================== GOAL ENDPOINTS ====================
@@ -667,64 +694,89 @@ def delete_goal(goal_id):
 # ==================== PREFERENCES ENDPOINTS ====================
 
 @app.route('/api/preferences/<user_id>', methods=['GET'])
+@require_token
 @handle_db_error
-def get_preferences(user_id):
-    """Get user preferences"""
-    query = "SELECT * FROM preferences WHERE user_id = %s"
+def fetch_preferences(user_id):
+    """Fetch user preferences."""
+    if g.user_id != user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    query = "SELECT currency, theme, notifications FROM preferences WHERE user_id = %s"
     preferences = execute_db_query(query, (user_id,), fetch_one=True)
-    
+
     if preferences:
+        # Ensure notifications is a boolean for the client
+        preferences['notifications'] = bool(preferences.get('notifications'))
         return jsonify(preferences), 200
     return jsonify({'error': 'Preferences not found'}), 404
 
-
-@app.route('/api/preferences', methods=['POST'])
-@handle_db_error
-def create_preferences():
-    """Create user preferences"""
-    data = request.get_json()
-    
-    if 'user_id' not in data:
-        return jsonify({'error': 'user_id is required'}), 400
-    
-    query = """
-        INSERT INTO preferences (user_id, currency, theme, notifications) 
-        VALUES (%s, %s, %s, %s)
-    """
-    params = (
-        data['user_id'], data.get('currency', 'USD'),
-        data.get('theme', 'light'), data.get('notifications', True)
-    )
-    
-    execute_db_query(query, params, commit=True)
-    return jsonify({'message': 'Preferences created successfully'}), 201
-
-
 @app.route('/api/preferences/<user_id>', methods=['PUT'])
+@require_token
 @handle_db_error
 def update_preferences(user_id):
-    """Update user preferences"""
+    """Update existing user preferences."""
+    if g.user_id != user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
     data = request.get_json()
+    updates = []
+    params = []
+
+    if 'currency' in data:
+        updates.append("currency = %s")
+        params.append(data['currency'])
     
-    update_fields = []
-    values = []
+    if 'theme' in data:
+        updates.append("theme = %s")
+        params.append(data['theme'])
+        
+    if 'notifications' in data:
+        updates.append("notifications = %s")
+        params.append(data['notifications'])
+
+    if not updates:
+        return jsonify({'message': 'No changes provided'}), 200
     
-    for field in ['currency', 'theme', 'notifications']:
-        if field in data:
-            update_fields.append(f"{field} = %s")
-            values.append(data[field])
-    
-    if not update_fields:
-        return jsonify({'error': 'No fields to update'}), 400
-    
-    values.append(user_id)
-    query = f"UPDATE preferences SET {', '.join(update_fields)} WHERE user_id = %s"
-    
-    result = execute_db_query(query, tuple(values), commit=True)
+    params.append(user_id)
+    query = f"UPDATE preferences SET {', '.join(updates)} WHERE user_id = %s"
+
+    result = execute_db_query(query, params, commit=True)
     
     if result.get('rowcount', 0) > 0:
         return jsonify({'message': 'Preferences updated successfully'}), 200
     return jsonify({'error': 'Preferences not found or no changes made'}), 404
+
+
+@app.route('/api/preferences', methods=['POST'])
+@require_token
+@handle_db_error
+def create_preferences():
+    """
+    NEW: Create new user preferences. 
+    This is used as a fallback if PUT fails with 404.
+    """
+    data = request.get_json()
+    user_id = g.user_id # Get user ID from the JWT token
+
+    # Check if preferences already exist to avoid the duplicate key error
+    existing_pref = execute_db_query("SELECT user_id FROM preferences WHERE user_id = %s", (user_id,), fetch_one=True)
+    if existing_pref:
+         # If it exists, return a 409 Conflict, letting the client know to use PUT next time.
+         return jsonify({'error': 'Preferences already exist for this user. Use PUT to update.', 'user_id': user_id}), 409
+    
+    # Extract data, providing defaults where necessary
+    currency = data.get('currency', 'USD')
+    theme = data.get('theme', 'light')
+    # Default to true if not explicitly provided
+    notifications = data.get('notifications', True) 
+
+    # The user_id is the PRIMARY KEY, so we insert it directly.
+    query = "INSERT INTO preferences (user_id, currency, theme, notifications) VALUES (%s, %s, %s, %s)"
+    params = (user_id, currency, theme, notifications)
+    
+    execute_db_query(query, params, commit=True)
+    
+    return jsonify({'message': 'Preferences created successfully', 'user_id': user_id}), 201
 
 
 # ==================== NOTIFICATION ENDPOINTS ====================
@@ -879,6 +931,145 @@ def delete_report(report_id):
     if result.get('rowcount', 0) > 0:
         return jsonify({'message': 'Report deleted successfully'}), 200
     return jsonify({'error': 'Report not found'}), 404
+
+
+# ==================== DASHBOARD REPORTING ENDPOINT ====================
+
+@app.route('/api/dashboard/summary/<user_id>', methods=['GET'])
+@handle_db_error
+def get_dashboard_summary(user_id):
+    """
+    Calculates and returns all dashboard summary data for a specific user,
+    including totals, monthly trends, and category breakdowns.
+    """
+    
+    # --- 1. TOTALS & BREAKDOWN (All Time / Last 12 Months) ---
+    
+    # For simplicity, we calculate totals for the last 12 months (or all data if less than 12 months)
+    # The client-side logic calculates total savings, so we provide income and expense totals.
+    
+    # Calculate start date for 12 months ago
+    twelve_months_ago = (date.today() - relativedelta(months=12)).isoformat()
+    
+    # Query 1: Total Income, Total Expense, and Expense Breakdown for the last year
+    summary_query = """
+        SELECT 
+            t.type, 
+            t.category,
+            SUM(t.amount) AS total_amount
+        FROM 
+            transaction t
+        WHERE 
+            t.user_id = %s 
+            AND t.date >= %s 
+        GROUP BY 
+            t.type, t.category
+    """
+    summary_data = execute_db_query(summary_query, (user_id, twelve_months_ago))
+
+    total_income = 0.0
+    total_expense = 0.0
+    expense_breakdown = {}
+    
+    for row in summary_data:
+        amount = float(row['total_amount'])
+        if row['type'].lower() == 'income':
+            total_income += amount
+        elif row['type'].lower() == 'expense':
+            total_expense += amount
+            category = row['category'] if row['category'] else 'Uncategorized'
+            expense_breakdown[category] = expense_breakdown.get(category, 0.0) + amount
+
+    pie_data = [
+        {'name': cat, 'value': val} 
+        for cat, val in expense_breakdown.items()
+    ]
+    
+    totals = {
+        'income': total_income,
+        'expense': total_expense,
+        'savings': total_income - total_expense
+    }
+    
+    # --- 2. MONTHLY TRENDS (Line Chart Data) ---
+    
+    # Query 2: Monthly Income and Expense
+    monthly_query = """
+        SELECT
+            DATE_FORMAT(date, '%%Y-%%m') AS month,
+            type,
+            SUM(amount) AS total
+        FROM
+            transaction
+        WHERE
+            user_id = %s
+            AND date >= %s 
+        GROUP BY
+            month, type
+        ORDER BY 
+            month
+    """
+    monthly_results = execute_db_query(monthly_query, (user_id, twelve_months_ago))
+    
+    monthly_map = {}
+    for row in monthly_results:
+        month = row['month']
+        if month not in monthly_map:
+            monthly_map[month] = {'month': month, 'income': 0.0, 'expense': 0.0}
+            
+        if row['type'].lower() == 'income':
+            monthly_map[month]['income'] = float(row['total'])
+        elif row['type'].lower() == 'expense':
+            monthly_map[month]['expense'] = float(row['total'])
+
+    monthly_data = list(monthly_map.values())
+    
+    # --- 3. ALERTS / NOTIFICATIONS ---
+    
+    # Query 3: Fetch active notifications (e.g., last 10 unread or all from last 30 days)
+    notifications_query = """
+        SELECT 
+            notification_id AS id, content AS message, type, created_at AS date 
+        FROM 
+            notification 
+        WHERE 
+            user_id = %s AND is_read = FALSE 
+        ORDER BY 
+            created_at DESC 
+        LIMIT 10
+    """
+    notifications = execute_db_query(notifications_query, (user_id,))
+    
+    # --- 4. INSIGHTS / REMINDERS (Fetch all reminders and last week's transactions) ---
+    
+    # Fetch all reminders
+    reminders_query = "SELECT title, amount, due_date AS dueDate FROM reminder WHERE user_id = %s"
+    reminders = execute_db_query(reminders_query, (user_id,))
+    
+    # Get transactions for the last two weeks for week-over-week comparison (The frontend handles this logic locally, 
+    # but we can provide the raw transactions to simplify the API)
+    fourteen_days_ago = (date.today() - relativedelta(days=14)).isoformat()
+    weekly_txns_query = """
+        SELECT 
+            amount, date, type, category
+        FROM 
+            transaction
+        WHERE 
+            user_id = %s
+            AND date >= %s
+        ORDER BY date DESC
+    """
+    weekly_txns = execute_db_query(weekly_txns_query, (user_id, fourteen_days_ago))
+
+    # Compile the final response
+    return jsonify({
+        'totals': totals,
+        'monthly_trend': monthly_data,
+        'expense_breakdown': pie_data,
+        'notifications': notifications,
+        'reminders': reminders,
+        'weekly_transactions': weekly_txns, # Send raw data for weekly calculation
+    }), 200
 
 
 # ==================== HEALTH CHECK ====================

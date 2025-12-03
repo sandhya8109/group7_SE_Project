@@ -14,13 +14,23 @@ const defaultForm = () => ({
 export default function ExpenseForm({ onAdd }){
   const [form, setForm] = useState(defaultForm())
   const [preview, setPreview] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
     if(!form.name || !form.amount) return
-    onAdd({ ...form })
-    setForm(defaultForm())
-    setPreview('')
+    
+    setIsSubmitting(true)
+    try {
+      await onAdd({ ...form })
+      setForm(defaultForm())
+      setPreview('')
+    } catch (error) {
+      console.error('Failed to add expense:', error)
+      // Optionally show an error message to the user here
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleReceipt = (file) => {
@@ -61,7 +71,9 @@ export default function ExpenseForm({ onAdd }){
         {form.receiptName && <span className="text-xs text-muted">{form.receiptName}</span>}
         {preview && <img src={preview} alt="Receipt preview" className="h-16 rounded-lg border border-slate-700/60" />}
       </div>
-      <button className="btn btn-primary" type="submit">Add Expense</button>
+      <button className="btn btn-primary" type="submit" disabled={isSubmitting}>
+        {isSubmitting ? 'Adding...' : 'Add Expense'}
+      </button>
     </form>
   )
 }

@@ -1,24 +1,52 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import { useFinance } from '../context/FinanceContext'
-import { useNotifications } from '../context/NotificationContext'
+import { useAuth } from '../context/AuthContext'
+import { fetchDashboardSummary } from '../api/client'
+//import { useNotifications } from '../context/NotificationContext'
 import { PieChart, Pie, Tooltip, Cell, ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts'
 
+const COLORS = ['#6366f1','#22c55e','#f59e0b','#ef4444','#a78bfa','#14b8a6']
+
 export default function Dashboard(){
-  const { state, totals, formatCurrency, fromBase } = useFinance()
-  const { notifications } = useNotifications()
-  const pie = Object.entries(state.expenses.reduce((acc,e)=>{ acc[e.category]=(acc[e.category]||0)+Number(e.amount); return acc },{}))
-    .map(([name,value]) => ({ name, value: fromBase(value) }))
-  const COLORS = ['#6366f1','#22c55e','#f59e0b','#ef4444','#a78bfa','#14b8a6']
+  const { formatCurrency, fromBase } = useFinance()
+  const { user, token } = useAuth()
 
-  const monthly = (()=>{
-    const mapInc={}, mapExp={}
-    for(const i of state.incomes){ const k=i.date.slice(0,7); mapInc[k]=(mapInc[k]||0)+fromBase(i.amount) }
-    for(const e of state.expenses){ const k=e.date.slice(0,7); mapExp[k]=(mapExp[k]||0)+fromBase(e.amount) }
-    const keys=[...new Set([...Object.keys(mapInc),...Object.keys(mapExp)])].sort()
-    return keys.map(k=>({ month:k, income: mapInc[k]||0, expense: mapExp[k]||0 }))
-  })()
+  const [dashboardData, setDashboardData] = useState({
+    totals: { income: 0, expense: 0, savings: 0 },
+    monthly_trend: [],
+    expense_breakdown: [],
+    notifications: [],
+    reminders: [],
+    weekly_transactions: [],
+  })
+  const [isLoading, setIsLoading] = useState(true)
+  // --- Data Fetching Effect ---
+  useEffect(() => {
+    // Only fetch if user and token are available
+    if (!user || !user.user_id || !token) return
+    
+    const loadDashboardData = async () => {
+      setIsLoading(true)
+      try {
+        // Call the new API endpoint
+        const response = await fetchDashboardSummary(user.user_id, token) 
+        setDashboardData(response) 
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error)
+        // Optionally update UI to show error
+      } finally {
+        setIsLoading(false)
+      }
+    }
 
-  const criticalAlerts = notifications.filter(n => ['overspending','due-soon','due-today','overdue','goal','low-savings'].includes(n.type)).slice(0,4)
+    loadDashboardData()
+  }, [user, token])
+
+
+  const criticalAlerts = dashboardData.notifications
+    // The API is designed to only send critical types, but we filter/limit just in case
+    .filter(n => ['overspending','due-soon','due-today','overdue','goal','low-savings'].includes(n.type))
+    .slice(0,4)
 
   const now = new Date()
   const startThisWeek = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d }, [])
@@ -28,39 +56,65 @@ export default function Dashboard(){
     return d >= start && d <= end
   }
 
-  const expensesThisWeek = state.expenses.filter(e => inRange(e.date, startThisWeek, now))
-  const expensesLastWeek = state.expenses.filter(e => inRange(e.date, startLastWeek, startThisWeek))
-  const incomeThisWeek = state.incomes.filter(i => inRange(i.date, startThisWeek, now))
+  const { totalExpThisWeek, totalExpLastWeek, weeklySavings, topCategory, weekChange, insights } = useMemo(() => {
+    const now = new Date()
+    // Define the start/end date ranges (Logic is kept from original component)
+    const startThisWeek = new Date(); startThisWeek.setDate(now.getDate() - 6);
+    const startLastWeek = new Date(); startLastWeek.setDate(now.getDate() - 13);
+    const inRange = (dateStr, start, end) => {
+      // NOTE: We rely on the date string being precise enough. New Date(dateStr) is necessary.
+      const d = new Date(dateStr)
+      // Check if d is on or after start, and strictly before end (or today)
+      return d.getTime() >= start.getTime() && d.getTime() <= now.getTime();
+    }
+
+  const expensesThisWeek = dashboardData.weekly_transactions.filter(e => e.type.toLowerCase() === 'expense' && inRange(e.date, startThisWeek, now))
+  const expensesLastWeek = dashboardData.weekly_transactions.filter(e => e.type.toLowerCase() === 'expense' && inRange(e.date, startLastWeek, startThisWeek))
+  const incomeThisWeek = dashboardData.weekly_transactions.filter(i => i.type.toLowerCase() === 'income' && inRange(i.date, startThisWeek, now))
+
+  const getAmount = (txn) => Number(txn.amount);
 
   const totalExpThisWeek = expensesThisWeek.reduce((s,e)=>s+fromBase(e.amount),0)
   const totalExpLastWeek = expensesLastWeek.reduce((s,e)=>s+fromBase(e.amount),0)
-  const weeklySavings = incomeThisWeek.reduce((s,i)=>s+fromBase(i.amount),0) - totalExpThisWeek
-  const highestCategory = expensesThisWeek.reduce((acc,e)=>{
-    const key = e.category || 'Other'
-    acc[key] = (acc[key]||0) + fromBase(e.amount)
-    return acc
-  }, {})
-  const topCategory = Object.entries(highestCategory).sort((a,b)=>b[1]-a[1])[0]
-  const weekChange = totalExpLastWeek ? Math.round(((totalExpThisWeek-totalExpLastWeek)/totalExpLastWeek)*100) : 0
+  const weeklySavings = incomeThisWeek.reduce((s,i)=>s+getAmount(i),0) - totalExpThisWeek
 
-  const insights = [
-    topCategory ? `Top category this week: ${topCategory[0]} (${formatCurrency(topCategory[1])}).` : 'Spend in categories to see insights.',
-    `You spent ${weekChange >= 0 ? weekChange : Math.abs(weekChange)}% ${weekChange >=0 ? 'more' : 'less'} than last week (${formatCurrency(totalExpThisWeek)} vs ${formatCurrency(totalExpLastWeek)}).`,
-    `Savings left this week: ${formatCurrency(weeklySavings)}.`,
-  ]
+  const highestCategory = expensesThisWeek.reduce((acc,e)=>{
+      const key = e.category || 'Other'
+      acc[key] = (acc[key]||0) + getAmount(e)
+      return acc
+    }, {})
+
+  const [topCatName, topCatAmount] = Object.entries(highestCategory).sort((a,b)=>b[1]-a[1])[0] || [null, 0]
+    const topCategory = topCatName ? [topCatName, topCatAmount] : null
+    
+    const weekChange = totalExpLastWeek ? Math.round(((totalExpThisWeek-totalExpLastWeek)/totalExpLastWeek)*100) : 0
+
+    const insights = [
+      topCategory ? `Top category this week: ${topCategory[0]} (${formatCurrency(topCategory[1])}).` : 'Spend in categories to see insights.',
+      `You spent ${weekChange >= 0 ? weekChange : Math.abs(weekChange)}% ${weekChange >=0 ? 'more' : 'less'} than last week (${formatCurrency(totalExpThisWeek)} vs ${formatCurrency(totalExpLastWeek)}).`,
+      `Savings left this week: ${formatCurrency(weeklySavings)}.`,
+    ]
+
+    return { totalExpThisWeek, totalExpLastWeek, weeklySavings, topCategory, weekChange, insights }
+  }, [dashboardData.weekly_transactions, formatCurrency])
 
   const upcomingReminders = useMemo(() => {
-    const today = new Date()
-    return state.reminders
+    const today = new Date(new Date().setHours(0,0,0,0)) // Start of today
+    return dashboardData.reminders
       .map(rem => ({
         ...rem,
-        daysLeft: Math.ceil((new Date(rem.dueDate) - today)/(1000*60*60*24))
+        // Calculate days left, ensuring it handles date objects or strings
+        daysLeft: Math.ceil((new Date(rem.dueDate).getTime() - today.getTime()) / (1000*60*60*24)) 
       }))
       .filter(rem => rem.daysLeft <= 7)
       .sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate))
-  }, [state.reminders])
+  }, [dashboardData.reminders])
 
-  return (
+  if (isLoading) {
+    return <div className="p-8 text-center text-xl text-muted">Loading Dashboard...</div>
+  }
+
+return (
     <div className="space-y-4">
       {criticalAlerts.length > 0 && (
         <div className="grid gap-3 md:grid-cols-2">
@@ -75,10 +129,12 @@ export default function Dashboard(){
           ))}
         </div>
       )}
+
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="card"><div className="label">Total Income</div><div className="kpi">{formatCurrency(totals.income)}</div></div>
-        <div className="card"><div className="label">Total Expenses</div><div className="kpi">{formatCurrency(totals.expense)}</div></div>
-        <div className="card"><div className="label">Savings</div><div className="kpi">{formatCurrency(totals.savings)}</div></div>
+        {/* Use API data: dashboardData.totals */}
+        <div className="card"><div className="label">Total Income</div><div className="kpi">{formatCurrency(dashboardData.totals.income)}</div></div>
+        <div className="card"><div className="label">Total Expenses</div><div className="kpi">{formatCurrency(dashboardData.totals.expense)}</div></div>
+        <div className="card"><div className="label">Savings</div><div className="kpi">{formatCurrency(dashboardData.totals.savings)}</div></div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -131,12 +187,13 @@ export default function Dashboard(){
         <div className="mb-2 font-semibold">Income vs Expense</div>
         <div className="h-72">
           <ResponsiveContainer>
-            <LineChart data={monthly}>
+            {/* Use API data: dashboardData.monthly_trend */}
+            <LineChart data={dashboardData.monthly_trend}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" /><YAxis />
               <Tooltip />
-              <Line dataKey="income" name="Income" />
-              <Line dataKey="expense" name="Expense" />
+              <Line dataKey="income" name="Income" stroke="#22c55e" />
+              <Line dataKey="expense" name="Expense" stroke="#f59e0b" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -147,8 +204,9 @@ export default function Dashboard(){
         <div className="h-72">
           <ResponsiveContainer>
             <PieChart>
-              <Pie data={pie} dataKey="value" nameKey="name" outerRadius={110}>
-                {pie.map((_,i)=>(<Cell key={i} fill={COLORS[i%COLORS.length]} />))}
+              {/* Use API data: dashboardData.expense_breakdown */}
+              <Pie data={dashboardData.expense_breakdown} dataKey="value" nameKey="name" outerRadius={110}>
+                {dashboardData.expense_breakdown.map((_,i)=>(<Cell key={i} fill={COLORS[i%COLORS.length]} />))}
               </Pie>
               <Tooltip />
             </PieChart>

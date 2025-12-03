@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect, useCallback } from 'react'
 import { useFinance } from '../context/FinanceContext'
+import { useAuth } from '../context/AuthContext' 
+import { fetchTransactions, createTransaction, deleteTransaction } from '../api/client' 
 import ExpenseForm from '../components/ExpenseForm'
 import IncomeForm from '../components/IncomeForm'
 import TransactionTable from '../components/TransactionTable'
@@ -9,21 +11,118 @@ const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 const slotLabels = ['Morning','Afternoon','Evening','Night']
 
 export default function Expenses(){
-  const { state, addExpense, removeExpense, addIncome, formatCurrency, fromBase } = useFinance()
+  const { formatCurrency, fromBase } = useFinance()
+  const { user, token } = useAuth()
   const [tab, setTab] = useState('expense')
   const [receiptModal, setReceiptModal] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const [transactions, setTransactions] = useState({ incomes: [], expenses: [] });
+
+  // --- Data Fetching Function (READ operation) ---
+  const fetchTransactionsData = useCallback(async () => {
+    if (!user || !user.user_id) return;
+    setIsLoading(true);
+    try {
+        // Fetch all transactions for the user
+        const allTxns = await fetchTransactions(user.user_id, token);
+        
+        // Filter and set local state
+        setTransactions({
+            incomes: allTxns.filter(t => t.type.toLowerCase() === 'income'),
+            expenses: allTxns.filter(t => t.type.toLowerCase() === 'expense'),
+        });
+    } catch (error) {
+        console.error('Failed to fetch transactions:', error);
+    } finally {
+        setIsLoading(false);
+    }
+  }, [user, token]);
+
+  useEffect(() => {
+    fetchTransactionsData();
+  }, [fetchTransactionsData]);
+
+  // --- CRUD Handlers ---
+
+  const handleAddExpense = useCallback(async (data) => {
+    if (!data.amount || !data.date || !data.name) {
+        console.error("Missing required expense data.");
+        return;
+    }
+
+    const transactionData = {
+      type: 'expense',
+      user_id: user.user_id,
+      date: data.date,
+      time: data.time,
+      name: data.name,
+      category: data.category,
+      amount: Number(data.amount),
+      notes: data.notes || '',
+      receipt_data: data.receipt || null,
+    };
+    
+    try {
+        await createTransaction(transactionData, token);
+        await fetchTransactionsData();
+    } catch (error) {
+        console.error("Failed to create expense:", error);
+        if (error.detail) console.error("API Detail:", error.detail);
+        throw error;
+    }
+  }, [user, token, fetchTransactionsData]);
+
+  const handleAddIncome = useCallback(async (data) => {
+    if (!data.amount || !data.date || !data.source) {
+        console.error("Missing required income data.");
+        return;
+    }
+
+    const transactionData = {
+      type: 'income',
+      user_id: user.user_id,
+      date: data.date,
+      source: data.source,
+      amount: Number(data.amount),
+      notes: data.notes || '',
+    };
+    
+    try {
+        await createTransaction(transactionData, token);
+        await fetchTransactionsData();
+    } catch (error) {
+        console.error("Failed to create income:", error);
+        if (error.detail) console.error("API Detail:", error.detail);
+        throw error;
+    }
+  }, [user, token, fetchTransactionsData]);
+
+  // --- Data Deletion Function (DELETE operation) ---
+  const handleDeleteTransaction = useCallback(async (transactionId) => {
+    try {
+        await deleteTransaction(transactionId, user.user_id, token);
+        await fetchTransactionsData();
+        return true; 
+    } catch (error) {
+        console.error("Failed to delete transaction:", error);
+        return false;
+    }
+  }, [user, token, fetchTransactionsData]);
 
   const totalsByCat = useMemo(() => {
-    const map = {}; for(const e of state.expenses){ map[e.category]=(map[e.category]||0)+Number(e.amount) } return map
-  }, [state.expenses])
+    const map = {}; 
+    for(const e of transactions.expenses){ map[e.category]=(map[e.category]||0)+Number(e.amount) } 
+    return map
+  }, [transactions.expenses])
 
   const spendingByDate = useMemo(() => {
     const map = {}
-    for(const exp of state.expenses){
-      map[exp.date] = (map[exp.date] || 0) + fromBase(exp.amount)
+    for(const exp of transactions.expenses){
+      map[exp.date] = (map[exp.date] || 0) + Number(exp.amount)
     }
     return Object.entries(map).sort(([a],[b]) => new Date(a) - new Date(b)).map(([date,total]) => ({ date, total }))
-  }, [state.expenses, fromBase])
+  }, [transactions.expenses])
 
   const heatmap = useMemo(() => {
     const template = dayNames.map(day => ({ day, Morning: 0, Afternoon: 0, Evening: 0, Night: 0 }))
@@ -34,13 +133,13 @@ export default function Expenses(){
       if(hour >= 17 && hour < 21) return 'Evening'
       return 'Night'
     }
-    for(const exp of state.expenses){
+    for(const exp of transactions.expenses){
       const dayIdx = new Date(exp.date).getDay()
       const slot = slotFor(exp.time)
       template[dayIdx][slot] += fromBase(exp.amount)
     }
     return template
-  }, [state.expenses, fromBase])
+  }, [transactions.expenses, fromBase])
 
   const radarData = useMemo(() => Object.entries(totalsByCat).map(([category,value]) => ({ category, value: fromBase(value) })), [totalsByCat, fromBase])
 
@@ -56,7 +155,7 @@ export default function Expenses(){
     prevMonthDate.setMonth(prevMonthDate.getMonth() - 1)
     const prevMonthKey = prevMonthDate.toISOString().slice(0,7)
 
-    for(const exp of state.expenses){
+    for(const exp of transactions.expenses){
       const date = new Date(exp.date)
       const day = date.getDay()
       const target = (day === 0 || day === 6) ? weekendTotals : weekdayTotals
@@ -91,9 +190,11 @@ export default function Expenses(){
       list.push('Keep adding transactions to unlock personalized insights!')
     }
     return list
-  }, [state.expenses, fromBase])
+  }, [transactions.expenses, fromBase])
 
-  const viewReceipt = (data, title) => setReceiptModal({ data, title })
+  if (isLoading) {
+    return <div className="p-8 text-center text-xl text-muted">Loading Transactions...</div>
+  }
 
   return (
     <div className="space-y-6">
@@ -109,11 +210,8 @@ export default function Expenses(){
             </button>
           ))}
         </div>
-        {tab === 'expense' ? (
-          <ExpenseForm onAdd={addExpense} />
-        ) : (
-          <IncomeForm onAdd={addIncome} />
-        )}
+        {tab === 'expense' && <ExpenseForm onAdd={handleAddExpense} />}
+        {tab === 'income' && <IncomeForm onAdd={handleAddIncome} />}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -127,13 +225,18 @@ export default function Expenses(){
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="card">
-          <div className="mb-2 font-semibold">All Expenses</div>
-          <TransactionTable rows={state.expenses} onDelete={removeExpense} onViewReceipt={viewReceipt} formatAmount={formatCurrency} />
+          <div className="mb-2 font-semibold">Transaction History</div>
+          <TransactionTable 
+            transactions={[...transactions.incomes, ...transactions.expenses].sort((a,b)=>new Date(b.date)-new Date(a.date))} 
+            onDelete={handleDeleteTransaction} 
+            formatCurrency={formatCurrency} 
+            onShowReceipt={setReceiptModal}
+          />
         </div>
         <div className="card">
           <div className="mb-2 font-semibold">Recent Income</div>
           <div className="space-y-2 max-h-[420px] overflow-auto">
-            {state.incomes.slice(0,10).map(inc => (
+            {transactions.incomes.slice(0,10).map(inc => (
               <div key={inc.id} className="flex items-center justify-between border border-slate-800/60 rounded-xl px-3 py-2">
                 <div>
                   <div className="font-semibold">{inc.source}</div>
@@ -142,7 +245,7 @@ export default function Expenses(){
                 <div className="text-sm font-bold">{formatCurrency(inc.amount)}</div>
               </div>
             ))}
-            {state.incomes.length === 0 && <div className="text-sm text-muted">Add your first income entry to see it here.</div>}
+            {transactions.incomes.length === 0 && <div className="text-sm text-muted">Add your first income entry to see it here.</div>}
           </div>
         </div>
       </div>

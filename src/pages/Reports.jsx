@@ -1,23 +1,61 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect, useCallback } from 'react'
 import { useFinance } from '../context/FinanceContext'
+import { useAuth } from '../context/AuthContext'
+import { fetchTransactions, createReport, fetchReports, deleteReport } from '../api/client'
 import { BarChart, Bar, ResponsiveContainer, CartesianGrid, XAxis, YAxis, Tooltip, LineChart, Line } from 'recharts'
 
 const sectionTitle = 'text-lg font-semibold mb-2'
 
 export default function Reports(){
-  const { state, setState, formatCurrency, fromBase } = useFinance()
+  const { formatCurrency } = useFinance()
+  const { user, token } = useAuth()
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0,7))
   const [importMessage, setImportMessage] = useState(null)
+  const [incomes, setIncomes] = useState([])
+  const [expenses, setExpenses] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [savedReports, setSavedReports] = useState([])
+
+  // --- Data Fetching Functions ---
+  const fetchTransactionsData = useCallback(async () => {
+    if (!user || !user.user_id) return;
+    setIsLoading(true);
+    try {
+      const allTxns = await fetchTransactions(user.user_id, token);
+      setIncomes(allTxns.filter(t => t.type?.toLowerCase() === 'income'));
+      setExpenses(allTxns.filter(t => t.type?.toLowerCase() === 'expense'));
+    } catch (error) {
+      console.error('Failed to fetch transactions:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user, token]);
+
+  const fetchSavedReports = useCallback(async () => {
+    if (!user || !user.user_id) return;
+    try {
+      const reports = await fetchReports(user.user_id, token);
+      setSavedReports(reports);
+    } catch (error) {
+      console.error('Failed to fetch saved reports:', error);
+    }
+  }, [user, token]);
+
+  useEffect(() => {
+    fetchTransactionsData();
+    fetchSavedReports();
+  }, [fetchTransactionsData, fetchSavedReports]);
 
   const availableMonths = useMemo(() => {
     const keys = new Set()
-    for(const arr of [state.incomes, state.expenses]){
+    for(const arr of [incomes, expenses]){
       for(const item of arr){
         if(item.date) keys.add(item.date.slice(0,7))
       }
     }
     return Array.from(keys).sort().reverse()
-  }, [state.incomes, state.expenses])
+  }, [incomes, expenses])
+
   const monthOptions = useMemo(() => {
     const year = selectedMonth.slice(0,4) || new Date().getFullYear().toString()
     const fullYearMonths = Array.from({ length: 12 }, (_, idx) => `${year}-${String(idx + 1).padStart(2,'0')}`)
@@ -26,76 +64,85 @@ export default function Reports(){
   }, [availableMonths, selectedMonth])
 
   const categoryData = useMemo(()=>{
-    const m = {}; for(const e of state.expenses){ m[e.category]=(m[e.category]||0)+fromBase(e.amount) }
-    return Object.entries(m).map(([category,total])=>({ category,total }))
-  }, [state.expenses, fromBase])
+    const m = {}
+    for(const e of expenses){ 
+      m[e.category] = (m[e.category] || 0) + Number(e.amount)
+    }
+    return Object.entries(m).map(([category,total])=>({ category, total }))
+  }, [expenses])
 
   const { annualData, totalAnnualSavingsBase } = useMemo(()=>{
     const monthlyMap = {}
-    for(const income of state.incomes){
+    for(const income of incomes){
       const key = income.date.slice(0,7)
       monthlyMap[key] = monthlyMap[key] || { month: key, income: 0, expense: 0 }
       monthlyMap[key].income += Number(income.amount)
     }
-    for(const expense of state.expenses){
+    for(const expense of expenses){
       const key = expense.date.slice(0,7)
       monthlyMap[key] = monthlyMap[key] || { month: key, income: 0, expense: 0 }
       monthlyMap[key].expense += Number(expense.amount)
     }
     const values = Object.values(monthlyMap).sort((a,b) => a.month.localeCompare(b.month))
     return {
-      annualData: values.map(row => ({ month: row.month, income: fromBase(row.income), expense: fromBase(row.expense), savings: fromBase(row.income - row.expense) })),
+      annualData: values.map(row => ({ 
+        month: row.month, 
+        income: row.income, 
+        expense: row.expense, 
+        savings: row.income - row.expense 
+      })),
       totalAnnualSavingsBase: values.reduce((sum,row)=>sum + (row.income - row.expense),0)
     }
-  }, [state.incomes, state.expenses, fromBase])
+  }, [incomes, expenses])
 
   const monthlySummary = useMemo(() => {
-    const income = state.incomes.filter(i => i.date.startsWith(selectedMonth)).reduce((s,i)=>s+Number(i.amount),0)
-    const expenses = state.expenses.filter(e => e.date.startsWith(selectedMonth)).reduce((s,e)=>s+Number(e.amount),0)
-    const categories = state.expenses.filter(e => e.date.startsWith(selectedMonth)).reduce((acc,exp)=>{
+    const income = incomes.filter(i => i.date.startsWith(selectedMonth)).reduce((s,i)=>s+Number(i.amount),0)
+    const expenseTotal = expenses.filter(e => e.date.startsWith(selectedMonth)).reduce((s,e)=>s+Number(e.amount),0)
+    const categories = expenses.filter(e => e.date.startsWith(selectedMonth)).reduce((acc,exp)=>{
       acc[exp.category] = (acc[exp.category] || 0) + Number(exp.amount)
       return acc
     }, {})
-    const biggest = state.expenses.filter(e => e.date.startsWith(selectedMonth)).sort((a,b)=>b.amount-a.amount)[0]
+    const biggest = expenses.filter(e => e.date.startsWith(selectedMonth)).sort((a,b)=>Number(b.amount)-Number(a.amount))[0]
+    
     const prev = new Date(selectedMonth + '-01')
     prev.setMonth(prev.getMonth() - 1)
     const prevKey = prev.toISOString().slice(0,7)
-    const prevNet = state.incomes.filter(i => i.date.startsWith(prevKey)).reduce((s,i)=>s+Number(i.amount),0) -
-      state.expenses.filter(e => e.date.startsWith(prevKey)).reduce((s,e)=>s+Number(e.amount),0)
-    const currentNet = income - expenses
+    const prevNet = incomes.filter(i => i.date.startsWith(prevKey)).reduce((s,i)=>s+Number(i.amount),0) -
+      expenses.filter(e => e.date.startsWith(prevKey)).reduce((s,e)=>s+Number(e.amount),0)
+    const currentNet = income - expenseTotal
     const trendDiff = currentNet - prevNet
+    
     return {
       income,
-      expenses,
+      expenses: expenseTotal,
       savings: currentNet,
       categories,
       biggest,
       trend: trendDiff
     }
-  }, [state.incomes, state.expenses, fromBase, selectedMonth])
+  }, [incomes, expenses, selectedMonth])
 
   const exportData = (format) => {
     const payload = {
       exportedAt: new Date().toISOString(),
-      currency: state.currency,
-      incomes: state.incomes,
-      expenses: state.expenses,
-      budgets: state.budgets,
-      goals: state.goals,
-      reminders: state.reminders
+      incomes: incomes,
+      expenses: expenses,
+      monthlySummary: monthlySummary,
+      annualData: annualData
     }
+    
     if(format === 'json'){
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-      triggerDownload(blob, 'finance-report.json')
+      triggerDownload(blob, `finance-report-${new Date().toISOString().slice(0,10)}.json`)
     }
     if(format === 'csv'){
       const header = 'type,date,name/category,amount,notes\n'
       const rows = [
-        ...state.incomes.map(i => `income,${i.date},${i.source},${fromBase(i.amount)},${i.notes || ''}`),
-        ...state.expenses.map(e => `expense,${e.date},${e.category} - ${e.name},${fromBase(e.amount)},${e.notes || ''}`)
+        ...incomes.map(i => `income,${i.date},${i.source || 'Income'},${i.amount},${i.notes || ''}`),
+        ...expenses.map(e => `expense,${e.date},${e.category} - ${e.name},${e.amount},${e.notes || ''}`)
       ]
       const blob = new Blob([header + rows.join('\n')], { type: 'text/csv' })
-      triggerDownload(blob, 'finance-report.csv')
+      triggerDownload(blob, `finance-report-${new Date().toISOString().slice(0,10)}.csv`)
     }
     if(format === 'pdf'){
       if(typeof window === 'undefined') return
@@ -116,36 +163,90 @@ export default function Reports(){
     URL.revokeObjectURL(url)
   }
 
-  const importJson = (file) => {
-    if(!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result)
-        setState(prev => ({
-          ...prev,
-          currency: data.currency || prev.currency,
-          incomes: data.incomes || prev.incomes,
-          expenses: data.expenses || prev.expenses,
-          budgets: data.budgets || prev.budgets,
-          goals: data.goals || prev.goals,
-          reminders: data.reminders || prev.reminders
-        }))
-        setImportMessage({ text: 'Report imported successfully ✅', type: 'success' })
-      } catch (err) {
-        setImportMessage({ text: 'Could not parse the uploaded file ❌', type: 'error' })
+  const saveMonthlyReport = async () => {
+    try {
+      const reportData = {
+        report_id: `report-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        user_id: user.user_id,
+        type: 'monthly_summary',
+        data: {
+          month: selectedMonth,
+          summary: monthlySummary,
+          categoryBreakdown: monthlySummary.categories,
+          biggestExpense: monthlySummary.biggest
+        }
       }
+      
+      await createReport(reportData, token)
+      await fetchSavedReports()
+      setImportMessage({ text: 'Report saved successfully ✅', type: 'success' })
+      setTimeout(() => setImportMessage(null), 3000)
+    } catch (error) {
+      console.error('Failed to save report:', error)
+      setImportMessage({ text: 'Failed to save report ❌', type: 'error' })
     }
-    reader.readAsText(file)
+  }
+
+  const deleteSavedReport = async (reportId) => {
+    if (!confirm('Delete this saved report?')) return
+    
+    try {
+      await deleteReport(reportId, token)
+      await fetchSavedReports()
+      setImportMessage({ text: 'Report deleted ✅', type: 'success' })
+      setTimeout(() => setImportMessage(null), 3000)
+    } catch (error) {
+      console.error('Failed to delete report:', error)
+    }
   }
 
   const exportMonthlyPdf = () => {
     if(typeof window === 'undefined') return
     const html = `
-      <h1>Monthly Report - ${selectedMonth}</h1>
-      <p>Total income: ${formatCurrency(monthlySummary.income)}</p>
-      <p>Total expenses: ${formatCurrency(monthlySummary.expenses)}</p>
-      <p>Savings: ${formatCurrency(monthlySummary.savings)}</p>
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Monthly Report - ${selectedMonth}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { color: #333; }
+          .summary { margin: 20px 0; }
+          .summary-item { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 5px; }
+          .label { font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <h1>Monthly Financial Report - ${selectedMonth}</h1>
+        <div class="summary">
+          <div class="summary-item">
+            <span class="label">Total Income:</span> ${formatCurrency(monthlySummary.income)}
+          </div>
+          <div class="summary-item">
+            <span class="label">Total Expenses:</span> ${formatCurrency(monthlySummary.expenses)}
+          </div>
+          <div class="summary-item">
+            <span class="label">Net Savings:</span> ${formatCurrency(monthlySummary.savings)}
+          </div>
+          <div class="summary-item">
+            <span class="label">Trend vs Previous Month:</span> ${monthlySummary.trend >= 0 ? '+' : ''}${formatCurrency(monthlySummary.trend)}
+          </div>
+        </div>
+        <h2>Category Breakdown</h2>
+        <ul>
+          ${Object.entries(monthlySummary.categories).map(([cat, val]) => 
+            `<li><strong>${cat}:</strong> ${formatCurrency(val)}</li>`
+          ).join('')}
+        </ul>
+        ${monthlySummary.biggest ? `
+          <h2>Biggest Expense</h2>
+          <div class="summary-item">
+            <div><strong>${monthlySummary.biggest.name}</strong></div>
+            <div>${monthlySummary.biggest.category}</div>
+            <div>${formatCurrency(monthlySummary.biggest.amount)}</div>
+          </div>
+        ` : ''}
+      </body>
+      </html>
     `
     const win = window.open('', '_blank')
     win.document.write(html)
@@ -156,6 +257,10 @@ export default function Reports(){
 
   const totalAnnualSavings = formatCurrency(totalAnnualSavingsBase)
 
+  if (isLoading) {
+    return <div className="p-8 text-center text-xl text-muted">Loading Reports...</div>
+  }
+
   return (
     <div className="space-y-6">
       <div className="card space-y-3">
@@ -165,16 +270,40 @@ export default function Reports(){
           <button className="btn btn-primary" onClick={()=>exportData('pdf')}>Export PDF</button>
           <button className="btn btn-primary" onClick={()=>exportData('json')}>Export JSON</button>
         </div>
-        <div>
-          <label className="label">Import JSON backup</label>
-          <input type="file" accept="application/json" onChange={e=>importJson(e.target.files[0])} />
-          {importMessage && <div className={`text-xs mt-1 ${importMessage.type === 'error' ? 'text-red-400' : 'text-green-400'}`}>{importMessage.text}</div>}
-        </div>
+        {importMessage && (
+          <div className={`text-sm p-2 rounded ${importMessage.type === 'error' ? 'bg-red-500/20 text-red-300' : 'bg-green-500/20 text-green-300'}`}>
+            {importMessage.text}
+          </div>
+        )}
       </div>
+
+      {savedReports.length > 0 && (
+        <div className="card space-y-3">
+          <div className={sectionTitle}>Saved Reports</div>
+          <div className="space-y-2">
+            {savedReports.map(report => (
+              <div key={report.report_id} className="flex items-center justify-between p-3 border border-slate-700/60 rounded-xl">
+                <div>
+                  <div className="font-semibold">{report.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+                  <div className="text-xs text-muted">
+                    {report.data?.month || 'N/A'} • Created {new Date(report.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <button 
+                  className="btn btn-ghost text-xs text-red-400" 
+                  onClick={() => deleteSavedReport(report.report_id)}
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card space-y-4">
         <div className={sectionTitle}>Monthly Report Generator</div>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           <div>
             <div className="label">Month</div>
             <select className="input" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}>
@@ -182,7 +311,10 @@ export default function Reports(){
             </select>
           </div>
           <div className="flex items-end">
-            <button className="btn btn-primary" onClick={exportMonthlyPdf}>Export summary as PDF</button>
+            <button className="btn btn-primary" onClick={exportMonthlyPdf}>Export as PDF</button>
+          </div>
+          <div className="flex items-end">
+            <button className="btn btn-primary" onClick={saveMonthlyReport}>Save Report</button>
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
@@ -213,6 +345,9 @@ export default function Reports(){
                   <span>{formatCurrency(value)}</span>
                 </li>
               ))}
+              {Object.keys(monthlySummary.categories).length === 0 && (
+                <li className="text-muted">No expenses recorded for this month.</li>
+              )}
             </ul>
           </div>
           <div>

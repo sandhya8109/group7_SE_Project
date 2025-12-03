@@ -33,14 +33,14 @@ CREATE TABLE preferences (
 CREATE TABLE transaction (
     transaction_id VARCHAR(50) PRIMARY KEY,
     user_id VARCHAR(50) NOT NULL,
-    amount DECIMAL(15, 2) NOT NULL, -- Always positive value; type defines income/expense
-    category VARCHAR(50),
+    amount DECIMAL(15, 2) NOT NULL,
+    type ENUM('expense', 'income') NOT NULL,
     date DATE NOT NULL,
+    category VARCHAR(50),
     description TEXT,
-    type ENUM('income', 'expense', 'transfer') NOT NULL, -- Added 'transfer' for completeness
+    receipt_data LONGTEXT, -- Stores base64 encoded image or URL
     FOREIGN KEY (user_id) REFERENCES user(user_id) ON DELETE CASCADE,
-    INDEX idx_user_date (user_id, date),
-    INDEX idx_category (category)
+    INDEX idx_user_type (user_id, type)
 );
 
 
@@ -59,21 +59,8 @@ CREATE TABLE budget (
 );
 
 
--- 5. Investment table (Asset tracking)
-CREATE TABLE investment (
-    investment_id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    type VARCHAR(50) NOT NULL, -- e.g., 'stock', 'bond', 'crypto', 'real estate'
-    amount DECIMAL(15, 2) NOT NULL, -- Purchase amount (or initial investment)
-    purchase_date DATE NOT NULL,
-    current_value DECIMAL(15, 2),
-    FOREIGN KEY (user_id) REFERENCES user(user_id) ON DELETE CASCADE,
-    INDEX idx_user_type (user_id, type)
-);
 
-
--- 6. Goal table (Savings and financial targets)
+-- 5. Goal table (Savings and financial targets)
 CREATE TABLE goal (
     goal_id VARCHAR(50) PRIMARY KEY,
     user_id VARCHAR(50) NOT NULL,
@@ -86,7 +73,7 @@ CREATE TABLE goal (
 );
 
 
--- 7. Report table (Stored, complex analysis results)
+-- 6. Report table (Stored, complex analysis results)
 CREATE TABLE report (
     report_id VARCHAR(50) PRIMARY KEY,
     user_id VARCHAR(50) NOT NULL,
@@ -98,7 +85,7 @@ CREATE TABLE report (
 );
 
 
--- 8. Notification table (User-facing alerts)
+-- 7. Notification table (User-facing alerts)
 CREATE TABLE notification (
     notification_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(50) NOT NULL,
@@ -111,7 +98,7 @@ CREATE TABLE notification (
 );
 
 
--- 9. FinancialOverview table (Pre-calculated/Cached financial summary)
+-- 8. FinancialOverview table (Pre-calculated/Cached financial summary)
 CREATE TABLE financial_overview (
     overview_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(50) UNIQUE NOT NULL, -- Ensures only one overview per user
@@ -123,7 +110,7 @@ CREATE TABLE financial_overview (
 );
 
 
--- 10. Insight table (System-generated financial tips and observations)
+-- 9. Insight table (System-generated financial tips and observations)
 CREATE TABLE insight (
     insight_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(50) NOT NULL,
@@ -132,3 +119,18 @@ CREATE TABLE insight (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES user(user_id) ON DELETE CASCADE
 );
+
+-- 10. Reminder table (User-defined financial reminders)
+CREATE TABLE reminder (
+    reminder_id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    category VARCHAR(50),
+    description TEXT,
+    amount DECIMAL(15, 2) NOT NULL,
+    due_date DATE NOT NULL,
+    recurring ENUM('Monthly', 'Weekly', 'Yearly', 'One-time') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES user(user_id) ON DELETE CASCADE
+);
+

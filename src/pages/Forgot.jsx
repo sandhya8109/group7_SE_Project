@@ -11,7 +11,7 @@ export default function Forgot(){
           <input className="input" type="email" placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)} />
         </div>
         <button className="btn btn-primary w-full">Send reset link</button>
-      </>) : (<div className="text-sm text-muted">If this were connected to a backend, a password reset link would be emailed to <span className="text-text">{email}</span>.</div>)}
+      </>) : (<div className="text-sm text-muted">If this were connected to a SMB server, a password reset link would be emailed to <span className="text-text">{email}</span>.</div>)}
     </form>
   )
 }
