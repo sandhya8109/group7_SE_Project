@@ -1,57 +1,113 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { useFinance } from './FinanceContext'
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
+import { useAuth } from './AuthContext'
+import { fetchTransactions, fetchBudgets, fetchReminders, fetchGoals } from '../api/client'
 
 const NotificationCtx = createContext()
-const STORAGE_KEY = 'pfbms-notifications-v1'
 const READ_KEY = 'pfbms-notifications-read-v1'
 
-const defaultNotifications = [
-  { id: 'ntf-celebrate', type: 'achievement', message: 'You saved $500 this month! 🎉', date: new Date().toISOString(), read: false }
-]
-
 export function NotificationProvider({ children }){
-  const { state, totals, formatCurrency } = useFinance()
-  const [customNotifications, setCustomNotifications] = useState(() => {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : defaultNotifications
-  })
+  const { user, token } = useAuth()
+  const [transactions, setTransactions] = useState([])
+  const [budgets, setBudgets] = useState([])
+  const [reminders, setReminders] = useState([])
+  const [goals, setGoals] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  
   const [readIds, setReadIds] = useState(() => {
     const raw = localStorage.getItem(READ_KEY)
     return raw ? new Set(JSON.parse(raw)) : new Set()
   })
 
+  // Fetch all data needed for notifications
+  const fetchAllData = useCallback(async () => {
+    if (!user || !user.user_id) return
+    
+    setIsLoading(true)
+    try {
+      const [txns, budgetsData, remindersData, goalsData] = await Promise.all([
+        fetchTransactions(user.user_id, token).catch(() => []),
+        fetchBudgets(user.user_id, token).catch(() => []),
+        fetchReminders(user.user_id, token).catch(() => []),
+        fetchGoals(user.user_id, token).catch(() => [])
+      ])
+      
+      setTransactions(txns)
+      setBudgets(budgetsData)
+      setReminders(remindersData)
+      setGoals(goalsData)
+    } catch (error) {
+      console.error('Failed to fetch notification data:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [user, token])
+
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(customNotifications))
-  }, [customNotifications])
+    fetchAllData()
+    // Refresh every 5 minutes
+    const interval = setInterval(fetchAllData, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [fetchAllData])
 
   useEffect(() => {
     localStorage.setItem(READ_KEY, JSON.stringify(Array.from(readIds)))
   }, [readIds])
 
+  // Calculate totals from transactions
+  const totals = useMemo(() => {
+    const income = transactions
+      .filter(t => t.type?.toLowerCase() === 'income')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+    const expense = transactions
+      .filter(t => t.type?.toLowerCase() === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+    return {
+      income,
+      expense,
+      savings: income - expense
+    }
+  }, [transactions])
+
+  const formatCurrency = (amount) => {
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(amount)
+    } catch {
+      return `$${Number(amount).toFixed(2)}`
+    }
+  }
+
   const systemAlerts = useMemo(() => {
+    if (isLoading) return []
+    
     const now = new Date()
     const todayKey = now.toISOString().slice(0,10)
-    const currentMonth = todayKey.slice(0,7)
     const alerts = []
 
-    const budgetsByCat = state.budgets.filter(b => b.period === currentMonth)
-    for(const budget of budgetsByCat){
-      const spent = state.expenses
-        .filter(e => e.category === budget.category && e.date?.startsWith(currentMonth))
+    // Budget alerts - check budgets against expenses in their date range
+    for(const budget of budgets){
+      const spent = transactions
+        .filter(t => 
+          t.type?.toLowerCase() === 'expense' &&
+          t.category === budget.category &&
+          t.date >= budget.start_date &&
+          t.date <= budget.end_date
+        )
         .reduce((sum, exp) => sum + Number(exp.amount || 0), 0)
-      if (budget.limit && spent > budget.limit * 0.5){
-        const pct = Math.round((spent / budget.limit) * 100)
+      
+      if (budget.amount && spent > budget.amount * 0.5){
+        const pct = Math.round((spent / budget.amount) * 100)
         alerts.push({
-          id: `overspending-${budget.category}`,
+          id: `overspending-${budget.budget_id}`,
           type: 'overspending',
-          message: `You have used ${pct}% of your ${budget.category} budget (${formatCurrency(budget.limit)} limit).`,
+          message: `You have used ${pct}% of your ${budget.category} budget (${formatCurrency(budget.amount)} limit).`,
           date: now.toISOString(),
           read: false
         })
       }
     }
 
-    const reminderStatuses = state.reminders.map(rem => {
+    // Reminder alerts
+    const reminderStatuses = reminders.map(rem => {
       const due = new Date(rem.dueDate)
       const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24))
       if (diffDays < 0) return { ...rem, status: 'overdue', diffDays }
@@ -61,9 +117,14 @@ export function NotificationProvider({ children }){
     }).filter(rem => ['overdue','due-today','due-soon'].includes(rem.status))
 
     for(const bill of reminderStatuses){
-      const label = bill.status === 'overdue' ? 'was due' : bill.status === 'due-today' ? 'is due today' : `is due in ${bill.diffDays} day${bill.diffDays === 1 ? '' : 's'}`
+      const label = bill.status === 'overdue' 
+        ? 'was due' 
+        : bill.status === 'due-today' 
+        ? 'is due today' 
+        : `is due in ${bill.diffDays} day${bill.diffDays === 1 ? '' : 's'}`
+      
       alerts.push({
-        id: `bill-${bill.id}`,
+        id: `bill-${bill.id || bill.reminder_id}`,
         type: bill.status,
         message: `${bill.title} (${formatCurrency(bill.amount)}) ${label}.`,
         date: bill.dueDate,
@@ -71,17 +132,25 @@ export function NotificationProvider({ children }){
       })
     }
 
-    const goalsSoon = state.goals.filter(goal => goal.deadline && (new Date(goal.deadline) - now)/(1000*60*60*24) <= 14)
+    // Goal alerts - goals approaching deadline
+    const goalsSoon = goals.filter(goal => {
+      if (!goal.deadline) return false
+      const daysUntil = (new Date(goal.deadline) - now) / (1000*60*60*24)
+      return daysUntil <= 14 && daysUntil >= 0
+    })
+    
     for(const goal of goalsSoon){
+      const daysLeft = Math.ceil((new Date(goal.deadline) - now) / (1000*60*60*24))
       alerts.push({
-        id: `goal-${goal.id}`,
+        id: `goal-${goal.goal_id}`,
         type: 'goal',
-        message: `${goal.title} is due soon. Keep saving!`,
+        message: `${goal.name} deadline in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Keep saving!`,
         date: goal.deadline,
         read: false
       })
     }
 
+    // Low savings warning
     if (totals.savings < 0){
       alerts.push({
         id: 'savings-warning',
@@ -92,24 +161,36 @@ export function NotificationProvider({ children }){
       })
     }
 
+    // Achievement notification - saved over $500 this month
+    const currentMonth = todayKey.slice(0,7)
+    const monthlyIncome = transactions
+      .filter(t => t.type?.toLowerCase() === 'income' && t.date?.startsWith(currentMonth))
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+    const monthlyExpense = transactions
+      .filter(t => t.type?.toLowerCase() === 'expense' && t.date?.startsWith(currentMonth))
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+    const monthlySavings = monthlyIncome - monthlyExpense
+    
+    if (monthlySavings >= 500){
+      alerts.push({
+        id: 'achievement-500',
+        type: 'achievement',
+        message: `You saved ${formatCurrency(monthlySavings)} this month! 🎉`,
+        date: now.toISOString(),
+        read: false
+      })
+    }
+
     return alerts
-  }, [state.budgets, state.expenses, state.reminders, state.goals, totals, formatCurrency])
+  }, [budgets, transactions, reminders, goals, totals, isLoading])
 
   const notifications = useMemo(() => {
-    const deduped = new Map()
-    for(const alert of [...systemAlerts, ...customNotifications]){
-      deduped.set(alert.id, alert)
-    }
-    return Array.from(deduped.values())
+    return systemAlerts
       .map(item => ({ ...item, read: readIds.has(item.id) }))
       .sort((a,b) => new Date(b.date) - new Date(a.date))
-  }, [systemAlerts, customNotifications, readIds])
+  }, [systemAlerts, readIds])
 
-  const unreadCount = notifications.reduce((count, notification) => count + (readIds.has(notification.id) ? 0 : 1), 0)
-
-  const addNotification = ({ type = 'info', message }) => {
-    setCustomNotifications(list => [{ id: crypto.randomUUID(), type, message, date: new Date().toISOString(), read: false }, ...list])
-  }
+  const unreadCount = notifications.filter(n => !readIds.has(n.id)).length
 
   const markRead = (id) => {
     setReadIds(prev => {
@@ -128,7 +209,7 @@ export function NotificationProvider({ children }){
     unreadCount,
     markRead,
     markAllRead,
-    addNotification
+    isLoading
   }
 
   return <NotificationCtx.Provider value={value}>{children}</NotificationCtx.Provider>

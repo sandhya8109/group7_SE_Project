@@ -332,22 +332,19 @@ export const deleteReport = (id, token) => {
   return apiFetch(`/reports/${id}`, { method: 'DELETE', token: token });
 };
 
-// ==================== PREFERENCES API FUNCTIONS ====================
+// ==================== PREFERENCES API FUNCTIONS  ====================
 
-// Check if the application is running in mock mode
-export const isMockMode = () => USE_MOCK;
-
-// Fetch user preferences by user ID
 export const fetchPreferences = (userId, token) => {
   return apiFetch(`/preferences/${userId}`, { token: token });
 };
 
-// Update user preferences
+export const createPreferences = (data, token) => {
+  return apiFetch('/preferences', { method: 'POST', body: JSON.stringify(data), token: token });
+};
+
 export const updatePreferences = (userId, data, token) => {
   return apiFetch(`/preferences/${userId}`, { method: 'PUT', body: JSON.stringify(data), token: token });
 };
 
-// Create user preferences (POST)
-export const createPreferences = (data, token) => {
-  return apiFetch('/preferences', { method: 'POST', body: JSON.stringify(data), token: token });
-};
+// Helper to check if we're in mock mode
+export const isMockMode = () => USE_MOCK;

@@ -6,6 +6,28 @@ import { BarChart, Bar, ResponsiveContainer, CartesianGrid, XAxis, YAxis, Toolti
 
 const sectionTitle = 'text-lg font-semibold mb-2'
 
+// Helper function to extract YYYY-MM from various date formats
+// Defined OUTSIDE the component to avoid initialization issues
+const getMonthKey = (dateValue) => {
+  if (!dateValue) return null
+  const dateStr = dateValue.toString()
+  
+  // If it's already in YYYY-MM format, use it
+  if (/^\d{4}-\d{2}/.test(dateStr)) {
+    return dateStr.slice(0, 7)
+  }
+  
+  // Otherwise parse as Date and format
+  const parsedDate = new Date(dateStr)
+  if (!isNaN(parsedDate.getTime())) {
+    const year = parsedDate.getFullYear()
+    const month = String(parsedDate.getMonth() + 1).padStart(2, '0')
+    return `${year}-${month}`
+  }
+  
+  return null
+}
+
 export default function Reports(){
   const { formatCurrency } = useFinance()
   const { user, token } = useAuth()
@@ -46,23 +68,6 @@ export default function Reports(){
     fetchSavedReports();
   }, [fetchTransactionsData, fetchSavedReports]);
 
-  const availableMonths = useMemo(() => {
-    const keys = new Set()
-    for(const arr of [incomes, expenses]){
-      for(const item of arr){
-        if(item.date) keys.add(item.date.slice(0,7))
-      }
-    }
-    return Array.from(keys).sort().reverse()
-  }, [incomes, expenses])
-
-  const monthOptions = useMemo(() => {
-    const year = selectedMonth.slice(0,4) || new Date().getFullYear().toString()
-    const fullYearMonths = Array.from({ length: 12 }, (_, idx) => `${year}-${String(idx + 1).padStart(2,'0')}`)
-    const options = new Set([...fullYearMonths, ...availableMonths, selectedMonth])
-    return Array.from(options).sort().reverse()
-  }, [availableMonths, selectedMonth])
-
   const categoryData = useMemo(()=>{
     const m = {}
     for(const e of expenses){ 
@@ -73,16 +78,23 @@ export default function Reports(){
 
   const { annualData, totalAnnualSavingsBase } = useMemo(()=>{
     const monthlyMap = {}
+    
     for(const income of incomes){
-      const key = income.date.slice(0,7)
+      const key = getMonthKey(income.date)
+      if (!key) continue
+      
       monthlyMap[key] = monthlyMap[key] || { month: key, income: 0, expense: 0 }
       monthlyMap[key].income += Number(income.amount)
     }
+    
     for(const expense of expenses){
-      const key = expense.date.slice(0,7)
+      const key = getMonthKey(expense.date)
+      if (!key) continue
+      
       monthlyMap[key] = monthlyMap[key] || { month: key, income: 0, expense: 0 }
       monthlyMap[key].expense += Number(expense.amount)
     }
+    
     const values = Object.values(monthlyMap).sort((a,b) => a.month.localeCompare(b.month))
     return {
       annualData: values.map(row => ({ 
@@ -96,21 +108,39 @@ export default function Reports(){
   }, [incomes, expenses])
 
   const monthlySummary = useMemo(() => {
-    const income = incomes.filter(i => i.date.startsWith(selectedMonth)).reduce((s,i)=>s+Number(i.amount),0)
-    const expenseTotal = expenses.filter(e => e.date.startsWith(selectedMonth)).reduce((s,e)=>s+Number(e.amount),0)
-    const categories = expenses.filter(e => e.date.startsWith(selectedMonth)).reduce((acc,exp)=>{
+    // Helper to check if a date belongs to the selected month
+    const dateMatchesMonth = (dateValue) => {
+      const monthKey = getMonthKey(dateValue)
+      return monthKey === selectedMonth
+    }
+    
+    const income = incomes.filter(i => dateMatchesMonth(i.date)).reduce((s,i)=>s+Number(i.amount),0)
+    const expenseTotal = expenses.filter(e => dateMatchesMonth(e.date)).reduce((s,e)=>s+Number(e.amount),0)
+    const categories = expenses.filter(e => dateMatchesMonth(e.date)).reduce((acc,exp)=>{
       acc[exp.category] = (acc[exp.category] || 0) + Number(exp.amount)
       return acc
     }, {})
-    const biggest = expenses.filter(e => e.date.startsWith(selectedMonth)).sort((a,b)=>Number(b.amount)-Number(a.amount))[0]
+    const biggest = expenses.filter(e => dateMatchesMonth(e.date)).sort((a,b)=>Number(b.amount)-Number(a.amount))[0]
     
-    const prev = new Date(selectedMonth + '-01')
-    prev.setMonth(prev.getMonth() - 1)
-    const prevKey = prev.toISOString().slice(0,7)
-    const prevNet = incomes.filter(i => i.date.startsWith(prevKey)).reduce((s,i)=>s+Number(i.amount),0) -
-      expenses.filter(e => e.date.startsWith(prevKey)).reduce((s,e)=>s+Number(e.amount),0)
+    // Calculate previous month key
+    const [year, month] = selectedMonth.split('-').map(Number)
+    const prevDate = new Date(year, month - 2, 1)
+    const prevKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
+    
+    const prevNet = incomes.filter(i => getMonthKey(i.date) === prevKey).reduce((s,i)=>s+Number(i.amount),0) -
+      expenses.filter(e => getMonthKey(e.date) === prevKey).reduce((s,e)=>s+Number(e.amount),0)
     const currentNet = income - expenseTotal
     const trendDiff = currentNet - prevNet
+    
+    console.log('[DEBUG] Monthly Summary:', {
+      selectedMonth,
+      income,
+      expenseTotal,
+      categories,
+      biggest,
+      filteredIncomes: incomes.filter(i => dateMatchesMonth(i.date)).length,
+      filteredExpenses: expenses.filter(e => dateMatchesMonth(e.date)).length
+    })
     
     return {
       income,
@@ -121,6 +151,25 @@ export default function Reports(){
       trend: trendDiff
     }
   }, [incomes, expenses, selectedMonth])
+
+  const monthOptions = useMemo(() => {
+    const keys = new Set()
+    
+    // Add all months that have transactions
+    for(const arr of [incomes, expenses]){
+      for(const item of arr){
+        const monthKey = getMonthKey(item.date)
+        if (monthKey) keys.add(monthKey)
+      }
+    }
+    
+    // Always include current month even if no transactions
+    const currentMonth = new Date().toISOString().slice(0,7)
+    keys.add(currentMonth)
+    
+    // Sort in reverse chronological order (newest first)
+    return Array.from(keys).sort().reverse()
+  }, [incomes, expenses])
 
   const exportData = (format) => {
     const payload = {
