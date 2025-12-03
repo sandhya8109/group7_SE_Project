@@ -1,5 +1,25 @@
 import React from 'react'
 
+// Helper to format date to YYYY-MM-DD
+const formatDate = (dateValue) => {
+  if (!dateValue) return '—'
+  const dateStr = dateValue.toString()
+  
+  // If already in YYYY-MM-DD format, return as is (useful for DB dates)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr
+  }
+  
+  // Parse and format
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return '—'
+  
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export default function TransactionTable({ transactions = [], onDelete, onShowReceipt, formatCurrency }){
   if (!transactions || transactions.length === 0) {
     return (
@@ -9,6 +29,8 @@ export default function TransactionTable({ transactions = [], onDelete, onShowRe
     )
   }
 
+  console.log('[DEBUG] TransactionTable - Sample transaction:', transactions[0]) // Debug
+
   return (
     <div className="overflow-auto max-h-[500px]">
       <table className="w-full text-sm">
@@ -16,7 +38,7 @@ export default function TransactionTable({ transactions = [], onDelete, onShowRe
           <tr className="border-b border-slate-700/60">
             <th className="py-2">Type</th>
             <th>Date</th>
-            <th>Time</th>
+            {/* REMOVED: <th>Time</th> */} 
             <th>Name</th>
             <th>Category</th>
             <th>Amount</th>
@@ -29,8 +51,12 @@ export default function TransactionTable({ transactions = [], onDelete, onShowRe
           {transactions.map(txn => {
             const id = txn.transaction_id || txn.id
             const isIncome = txn.type?.toLowerCase() === 'income'
-            const name = isIncome ? txn.source : txn.name
-            const category = isIncome ? 'Income' : txn.category
+            
+            // --- LOGIC TO FIT NEW SCHEMA ---
+            const name = txn.name || 'Untitled Transaction' 
+            const notes = txn.description || '' 
+            const category = isIncome ? 'Income' : (txn.category || '—')
+            // --- END LOGIC ---
             
             return (
               <tr key={id} className="border-b border-slate-800/60">
@@ -39,15 +65,15 @@ export default function TransactionTable({ transactions = [], onDelete, onShowRe
                     {isIncome ? 'Income' : 'Expense'}
                   </span>
                 </td>
-                <td>{txn.date}</td>
-                <td>{txn.time || '—'}</td>
-                <td>{name || '—'}</td>
-                <td>{category || '—'}</td>
+                <td>{formatDate(txn.date)}</td>
+                {/* REMOVED: <td>{txn.time || '—'}</td> */} 
+                <td className="max-w-[150px] truncate" title={name}>{name}</td>
+                <td>{category}</td>
                 <td className={isIncome ? 'text-green-400' : 'text-red-400'}>
-                  {isIncome ? '+' : '-'}{formatCurrency ? formatCurrency(txn.amount) : `$${Number(txn.amount).toFixed(2)}`}
+                  {isIncome ? '+' : '-'}{formatCurrency ? formatCurrency(txn.amount) : `${Number(txn.amount).toFixed(2)}`}
                 </td>
-                <td className="max-w-[150px] truncate" title={txn.notes}>
-                  {txn.notes || '—'}
+                <td className="max-w-[150px] truncate" title={notes}>
+                  {notes || '—'}
                 </td>
                 <td>
                   {txn.receipt_data ? (

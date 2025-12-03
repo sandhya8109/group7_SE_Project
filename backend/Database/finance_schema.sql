@@ -33,6 +33,7 @@ CREATE TABLE preferences (
 CREATE TABLE transaction (
     transaction_id VARCHAR(50) PRIMARY KEY,
     user_id VARCHAR(50) NOT NULL,
+    name VARCHAR(100) NOT NULL,
     amount DECIMAL(15, 2) NOT NULL,
     type ENUM('expense', 'income') NOT NULL,
     date DATE NOT NULL,

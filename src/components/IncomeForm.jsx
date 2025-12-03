@@ -2,22 +2,42 @@ import React, { useState } from 'react'
 
 const defaultForm = () => ({
   date: new Date().toISOString().slice(0,10),
-  source: '',
+  source: '', 
   amount: '',
-  notes: ''
+  notes: '' 
 })
 
-export default function IncomeForm({ onAdd }){
+export default function IncomeForm({ onAdd, userId }){ 
   const [form, setForm] = useState(defaultForm())
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const submit = async (e) => {
     e.preventDefault()
+    // The name and amount are required fields
     if(!form.source || !form.amount) return
     
     setIsSubmitting(true)
     try {
-      await onAdd({ ...form })
+      // --- START: MAPPING FORM DATA TO DB SCHEMA FIELDS ---
+      const transactionData = {
+        // Required fields:
+        user_id: userId , 
+        type: 'income',           
+        amount: Number(form.amount), 
+        date: form.date,          
+        
+        // Mapped fields:
+        name: form.source,        
+        description: form.notes,  
+
+        // Optional/Defaulted fields:
+        category: 'Salary',       
+        receipt_data: null        
+      }
+      
+      await onAdd(transactionData)
+      // --- END: MAPPING FORM DATA TO DB SCHEMA FIELDS ---
+
       setForm(defaultForm())
     } catch (error) {
       console.error('Failed to add income:', error)

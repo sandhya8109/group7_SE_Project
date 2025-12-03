@@ -7,6 +7,7 @@ import {
   fetchTransactions 
 } from '../api/client'
 
+// BudgetCard component remains the same, as the calculation is moved to the parent component
 function BudgetCard({ budget, spent, formatCurrency, onEdit, onDelete }){
   const pct = Math.min(100, Math.round((spent/Math.max(1,budget.amount))*100))
   const over = spent > budget.amount
@@ -45,15 +46,43 @@ export default function Budgets(){
   // Helper to normalize date to YYYY-MM-DD format
   const normalizeDate = (dateValue) => {
     if (!dateValue) return ''
-    // Handle various date formats
     const date = new Date(dateValue)
-    if (isNaN(date.getTime())) return '' // Invalid date
+    if (isNaN(date.getTime())) return ''
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
     const day = String(date.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   }
   
+  // Helper to calculate start/end dates for the *current* period
+  const getActualPeriodDates = (period) => {
+    const today = new Date()
+    let startDate, endDate
+    
+    // Determine the start and end of the current period based on the budget period type
+    if (period === 'monthly') {
+      startDate = new Date(today.getFullYear(), today.getMonth(), 1)
+      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0) // Last day of current month
+    } else if (period === 'weekly') {
+      // Assuming week starts on Sunday (getDay() == 0)
+      const dayOfWeek = today.getDay() 
+      startDate = new Date(today)
+      startDate.setDate(today.getDate() - dayOfWeek)
+      endDate = new Date(startDate)
+      endDate.setDate(startDate.getDate() + 6) 
+    } else if (period === 'yearly') {
+      startDate = new Date(today.getFullYear(), 0, 1) // Jan 1
+      endDate = new Date(today.getFullYear(), 11, 31) // Dec 31
+    } else { // 'one-time' or unhandled period - use the budget's saved dates
+      return null
+    }
+
+    return { 
+      startDate: normalizeDate(startDate), 
+      endDate: normalizeDate(endDate) 
+    }
+  }
+
   const initialForm = { 
     startDate: new Date().toISOString().slice(0,10),
     endDate: (() => {
@@ -74,6 +103,7 @@ export default function Budgets(){
 
   // --- Data Fetching Functions ---
   const fetchBudgetsData = useCallback(async () => {
+    // ... (logic remains the same)
     if (!user || !user.user_id) return;
     setIsLoading(true);
     try {
@@ -87,8 +117,11 @@ export default function Budgets(){
   }, [user, token]);
 
   const fetchExpensesData = useCallback(async () => {
+    // ... (logic remains the same)
     if (!user || !user.user_id) return;
     try {
+      // NOTE: For better performance with large data, ideally you'd filter
+      // transactions by the max start/end dates of all active budgets on the API side.
       const allTxns = await fetchTransactions(user.user_id, token);
       setExpenses(allTxns.filter(t => t.type?.toLowerCase() === 'expense'));
     } catch (error) {
@@ -101,35 +134,40 @@ export default function Budgets(){
     fetchExpensesData();
   }, [fetchBudgetsData, fetchExpensesData]);
 
-  // Calculate spending by category for each budget's date range
+  // Calculate spending by category for the CURRENT period of each budget
   const getSpentForBudget = useCallback((budget) => {
     let total = 0
+    
+    // Determine the date range to check based on budget period
+    let periodDates = null
+    if (budget.period === 'one-time' || budget.period === 'custom') {
+        // Use the saved start/end dates for one-time/custom budgets
+        periodDates = { startDate: budget.start_date, endDate: budget.end_date }
+    } else {
+        // Use dynamically calculated dates for recurring budgets (monthly, weekly, yearly)
+        periodDates = getActualPeriodDates(budget.period)
+    }
+
+    if (!periodDates) return 0 // Should not happen if period is valid
+
+    const { startDate, endDate } = periodDates;
+    
+    // Filter expenses
     for (const e of expenses) {
+      // Check for matching category AND if transaction date is within the calculated period
       if (e.category === budget.category && 
-          e.date >= budget.start_date && 
-          e.date <= budget.end_date) {
+          e.date >= startDate && 
+          e.date <= endDate) {
         total += Number(e.amount)
       }
     }
     return total
-  }, [expenses])
+  }, [expenses]) // Dependency on expenses is correct
 
-  // Helper to calculate start/end dates from period (YYYY-MM)
-  const getPeriodDates = (period) => {
-    const [year, month] = period.split('-')
-    const startDate = `${year}-${month}-01`
-    const lastDay = new Date(year, month, 0).getDate()
-    const endDate = `${year}-${month}-${String(lastDay).padStart(2, '0')}`
-    return { startDate, endDate }
-  }
+  // The rest of the component's logic remains the same
 
-  // Helper to format period - try different formats if needed
-  const formatPeriod = (period) => {
-    // Return the ENUM value directly since we're now using a dropdown
-    return period // Values: 'monthly', 'yearly', 'weekly', 'one-time'
-  }
+  // ... (CRUD handlers and other functions omitted for brevity) ...
 
-  // --- CRUD Handlers ---
   const submit = async (e) => {
     e.preventDefault()
     if (!form.amount || !form.startDate || !form.endDate) return
@@ -141,8 +179,9 @@ export default function Budgets(){
           category: form.category,
           amount: Number(form.amount),
           period: form.period,
-          start_date: form.startDate,
-          end_date: form.endDate
+          // Use normalized dates for consistency
+          start_date: normalizeDate(form.startDate), 
+          end_date: normalizeDate(form.endDate)
         }
         await updateBudget(editing, updateData, token)
       } else {
@@ -153,24 +192,25 @@ export default function Budgets(){
           category: form.category,
           amount: Number(form.amount),
           period: form.period,
-          start_date: form.startDate,
-          end_date: form.endDate,
+          // Use normalized dates for consistency
+          start_date: normalizeDate(form.startDate), 
+          end_date: normalizeDate(form.endDate),
           is_exceeded: false
         }
-        console.log('[DEBUG] Creating budget with data:', createData); // Debug
         await createBudget(createData, token)
       }
       
       setForm({ ...form, amount: '' })
       setEditing(null)
       await fetchBudgetsData()
+      // Re-fetch expenses to ensure the latest data is used for calculation immediately
+      await fetchExpensesData() 
     } catch (error) {
       console.error(`Failed to ${editing ? 'update' : 'create'} budget:`, error)
     }
   }
 
   const startEdit = (budget) => {
-    console.log('[DEBUG] Editing budget:', budget); // Debug
     setEditing(budget.budget_id)
     setForm({ 
       startDate: normalizeDate(budget.start_date),
@@ -179,10 +219,6 @@ export default function Budgets(){
       category: budget.category, 
       amount: budget.amount 
     })
-    console.log('[DEBUG] Form set to:', { 
-      startDate: normalizeDate(budget.start_date),
-      endDate: normalizeDate(budget.end_date)
-    }); // Debug
   }
 
   const handleDelete = async (budget) => {
@@ -196,6 +232,7 @@ export default function Budgets(){
         }
         
         await fetchBudgetsData()
+        await fetchExpensesData() // Refresh spending data
       } catch (error) {
         console.error('Failed to delete budget:', error)
       }

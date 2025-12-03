@@ -362,7 +362,9 @@ def delete_user(user_id):
 def get_transactions(user_id):
     """Fetch all transactions for a specific user."""
     query = """
-        SELECT transaction_id AS id, user_id, type, amount, date, category, description, receipt_data
+        SELECT 
+            transaction_id AS id, user_id, name, type, amount, date, 
+            category, description, receipt_data
         FROM transaction 
         WHERE user_id = %s
         ORDER BY date DESC
@@ -377,18 +379,19 @@ def get_transactions(user_id):
 def create_transaction():
     """Create a new transaction (Income or Expense)."""
     data = request.json
-    required_fields = ['user_id', 'type', 'amount', 'date']
+    # *** FIX: Added 'name' to required_fields ***
+    required_fields = ['user_id', 'name', 'type', 'amount', 'date'] 
     if not all(field in data for field in required_fields):
         return jsonify({'error': 'Missing required transaction fields'}), 400
     
     transaction_id = str(uuid.uuid4())
     query = """
         INSERT INTO transaction 
-        (transaction_id, user_id, type, amount, date, category, description, receipt_data)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        (transaction_id, user_id, name, type, amount, date, category, description, receipt_data)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     params = (
-        transaction_id, data['user_id'], data['type'], data['amount'], 
+        transaction_id, data['user_id'], data['name'], data['type'], data['amount'], 
         data['date'], data.get('category'), data.get('description'), data.get('receipt_data')
     )
     
@@ -411,7 +414,6 @@ def delete_transaction(transaction_id):
     if result.get('rowcount', 0) > 0:
         return jsonify({'message': 'Transaction deleted successfully'}), 200
     return jsonify({'error': 'Transaction not found or unauthorized'}), 404
-
 
 # ==================== REMINDER ENDPOINTS ====================
 

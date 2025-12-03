@@ -47,30 +47,30 @@ INSERT INTO reminder (reminder_id, user_id, title, category, description, amount
 
 -- 3. TRANSACTION TABLE DATA (1 Year of Data for Both Users)
 
-INSERT INTO transaction (transaction_id, user_id, amount, type, date, category, description, receipt_data) VALUES
+INSERT INTO transaction (transaction_id, user_id, name, amount, type, date, category, description, receipt_data) VALUES
 -- ZACKARY'S TRANSACTIONS (f3582516-009b-4ff3-8e5f-efb2c4a4880d)
-('t-z-dec24-01', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 4500.00, 'income', '2024-12-01', 'Salary', 'Monthly paycheck', NULL),
-('t-z-dec24-02', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 1500.00, 'expense', '2024-12-02', 'Housing', 'December Rent', NULL),
-('t-z-dec24-03', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 170.00, 'expense', '2024-12-24', 'Entertainment', 'Concert tickets', NULL),
-('t-z-mar25-01', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 600.00, 'expense', '2025-03-15', 'Insurance', 'Annual Car Insurance', NULL),
-('t-z-jul25-01', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 200.00, 'expense', '2025-07-01', 'Travel', 'Gas for road trip', NULL),
-('t-z-nov25-01', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 4500.00, 'income', '2025-11-01', 'Salary', 'Monthly paycheck', NULL),
-('t-z-nov25-02', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 2000.00, 'income', '2025-11-15', 'Side Hustle', 'Freelance payment', NULL),
-('t-z-nov25-03', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 1000.00, 'expense', '2025-11-20', 'Investment', 'Brokerage transfer', NULL),
-('t-z-groceries-1', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 350.00, 'expense', '2025-11-05', 'Groceries', 'Monthly bulk shop', NULL),
+('t-z-dec24-01', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 'December Paycheck', 4500.00, 'income', '2024-12-01', 'Salary', 'Monthly paycheck', NULL),
+('t-z-dec24-02', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 'Rent Payment', 1500.00, 'expense', '2024-12-02', 'Housing', 'December Rent', NULL),
+('t-z-dec24-03', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 'Concert Tickets', 170.00, 'expense', '2024-12-24', 'Entertainment', 'Concert tickets', NULL),
+('t-z-mar25-01', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 'Car Insurance', 600.00, 'expense', '2025-03-15', 'Insurance', 'Annual Car Insurance', NULL),
+('t-z-jul25-01', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 'Road Trip Gas', 200.00, 'expense', '2025-07-01', 'Travel', 'Gas for road trip', NULL),
+('t-z-nov25-01', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 'November Paycheck', 4500.00, 'income', '2025-11-01', 'Salary', 'Monthly paycheck', NULL),
+('t-z-nov25-02', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 'Freelance Project X', 2000.00, 'income', '2025-11-15', 'Side Hustle', 'Freelance payment', NULL),
+('t-z-nov25-03', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 'Investment Transfer', 1000.00, 'expense', '2025-11-20', 'Investment', 'Brokerage transfer', NULL),
+('t-z-groceries-1', 'f3582516-009b-4ff3-8e5f-efb2c4a4880d', 'Monthly Groceries', 350.00, 'expense', '2025-11-05', 'Groceries', 'Monthly bulk shop', NULL),
 
 -- ELARA'S TRANSACTIONS (a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p)
-('t-e-dec24-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 6200.00, 'income', '2024-12-01', 'Salary', 'Monthly Pay', NULL),
-('t-e-dec24-02', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 2100.00, 'expense', '2024-12-03', 'Housing', 'Apartment Rent', NULL),
-('t-e-dec24-03', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 280.00, 'expense', '2024-12-10', 'Utilities', 'Electric Bill (High usage)', NULL), -- Over budget
-('t-e-dec24-04', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 1500.00, 'expense', '2024-12-28', 'Savings', 'Contribution to Home Goal', NULL),
-('t-e-jan25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 450.00, 'expense', '2025-01-15', 'Debt', 'Student Loan Payment', NULL),
-('t-e-jan25-02', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 500.00, 'expense', '2025-01-20', 'Clothing', 'New winter coat', NULL),
-('t-e-apr25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 1500.00, 'expense', '2025-04-10', 'Taxes', 'Quarterly Estimated Tax Payment', NULL),
-('t-e-jun25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 30.00, 'expense', '2025-06-05', 'Subscriptions', 'Spotify Premium', NULL),
-('t-e-aug25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 5000.00, 'income', '2025-08-01', 'Bonus', 'Annual Performance Bonus', NULL),
-('t-e-oct25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 2000.00, 'expense', '2025-10-25', 'Savings', 'Contribution to Home Goal', NULL),
-('t-e-nov25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 6200.00, 'income', '2025-11-01', 'Salary', 'Monthly Pay', NULL);
+('t-e-dec24-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'December Salary', 6200.00, 'income', '2024-12-01', 'Salary', 'Monthly Pay', NULL),
+('t-e-dec24-02', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'Apartment Rent', 2100.00, 'expense', '2024-12-03', 'Housing', 'Apartment Rent', NULL),
+('t-e-dec24-03', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'Electric Bill', 280.00, 'expense', '2024-12-10', 'Utilities', 'Electric Bill (High usage)', NULL), 
+('t-e-dec24-04', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'Home Savings', 1500.00, 'expense', '2024-12-28', 'Savings', 'Contribution to Home Goal', NULL),
+('t-e-jan25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'Student Loan', 450.00, 'expense', '2025-01-15', 'Debt', 'Student Loan Payment', NULL),
+('t-e-jan25-02', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'Winter Coat Purchase', 500.00, 'expense', '2025-01-20', 'Clothing', 'New winter coat', NULL),
+('t-e-apr25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'Q1 Tax Payment', 1500.00, 'expense', '2025-04-10', 'Taxes', 'Quarterly Estimated Tax Payment', NULL),
+('t-e-jun25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'Spotify Subscription', 30.00, 'expense', '2025-06-05', 'Subscriptions', 'Spotify Premium', NULL),
+('t-e-aug25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'Annual Bonus', 5000.00, 'income', '2025-08-01', 'Bonus', 'Annual Performance Bonus', NULL),
+('t-e-oct25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'Home Savings', 2000.00, 'expense', '2025-10-25', 'Savings', 'Contribution to Home Goal', NULL),
+('t-e-nov25-01', 'a9c1b2d3-4e5f-6g7h-8i9j-0k1l2m3n4o5p', 'November Salary', 6200.00, 'income', '2025-11-01', 'Salary', 'Monthly Pay', NULL);
 
 
 -- 8. FINANCIAL OVERVIEW TABLE DATA (Calculated Summaries)

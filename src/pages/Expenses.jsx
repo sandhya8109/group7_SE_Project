@@ -55,11 +55,13 @@ export default function Expenses(){
       type: 'expense',
       user_id: user.user_id,
       date: data.date,
-      time: data.time,
+      // Note: `time` is not in DB schema, but kept here if parent components need it.
+      time: data.time, 
       name: data.name,
       category: data.category,
       amount: Number(data.amount),
-      notes: data.notes || '',
+      // Mapped notes to description as per previous change
+      description: data.notes || '', 
       receipt_data: data.receipt || null,
     };
     
@@ -74,7 +76,7 @@ export default function Expenses(){
   }, [user, token, fetchTransactionsData]);
 
   const handleAddIncome = useCallback(async (data) => {
-    if (!data.amount || !data.date || !data.source) {
+    if (!data.amount || !data.date || !data.name) {
         console.error("Missing required income data.");
         return;
     }
@@ -83,9 +85,10 @@ export default function Expenses(){
       type: 'income',
       user_id: user.user_id,
       date: data.date,
-      source: data.source,
+      name: data.name, // FIX 1: Use `data.name`
       amount: Number(data.amount),
-      notes: data.notes || '',
+      description: data.notes || '', // Mapped notes to description
+      category: data.category, // Assuming category is passed or handled
     };
     
     try {
@@ -134,7 +137,8 @@ export default function Expenses(){
       return 'Night'
     }
     for(const exp of transactions.expenses){
-      const dayIdx = new Date(exp.date).getDay()
+      const date = new Date(exp.date)
+      const dayIdx = date.getDay()
       const slot = slotFor(exp.time)
       template[dayIdx][slot] += fromBase(exp.amount)
     }
@@ -210,8 +214,10 @@ export default function Expenses(){
             </button>
           ))}
         </div>
-        {tab === 'expense' && <ExpenseForm onAdd={handleAddExpense} />}
-        {tab === 'income' && <IncomeForm onAdd={handleAddIncome} />}
+        <div className="max-w-2xl">
+          {tab === 'expense' && <ExpenseForm onAdd={handleAddExpense} />}
+          {tab === 'income' && <IncomeForm onAdd={handleAddIncome} />}
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -239,7 +245,8 @@ export default function Expenses(){
             {transactions.incomes.slice(0,10).map(inc => (
               <div key={inc.id} className="flex items-center justify-between border border-slate-800/60 rounded-xl px-3 py-2">
                 <div>
-                  <div className="font-semibold">{inc.source}</div>
+                  {/* FIX 2: Use `inc.name` from the new schema */}
+                  <div className="font-semibold">{inc.name}</div>
                   <div className="text-xs text-muted">{inc.date}</div>
                 </div>
                 <div className="text-sm font-bold">{formatCurrency(inc.amount)}</div>
@@ -249,6 +256,8 @@ export default function Expenses(){
           </div>
         </div>
       </div>
+      
+      {/* ... (Omitted Insights and Charts for brevity) ... */}
 
       <div className="card space-y-4">
         <div>

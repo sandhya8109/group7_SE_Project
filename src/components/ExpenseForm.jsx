@@ -7,7 +7,7 @@ const defaultForm = () => ({
   category:'Food',
   amount:'',
   notes:'',
-  receipt:null,
+  receipt:null, // Stores base64 data URL
   receiptName:''
 })
 
@@ -22,7 +22,30 @@ export default function ExpenseForm({ onAdd }){
     
     setIsSubmitting(true)
     try {
-      await onAdd({ ...form })
+      // --- START: MAPPING FORM DATA TO DB SCHEMA FIELDS ---
+      const transactionData = {
+        // Required fields:
+        name: form.name,
+        amount: Number(form.amount), // Ensure amount is passed as a number
+        date: form.date, // Backend expects YYYY-MM-DD
+        
+        // Expense Type is implicit in this ExpenseForm, 
+        // but should be set explicitly before the API call:
+        type: 'expense', 
+        
+        // Optional fields:
+        category: form.category,
+        
+        // Renamed field: form.notes maps to DB 'description'
+        description: form.notes, 
+        
+        // Renamed field: form.receipt maps to DB 'receipt_data' (Base64 URL)
+        receipt_data: form.receipt 
+      }
+      
+      await onAdd(transactionData)
+      // --- END: MAPPING FORM DATA TO DB SCHEMA FIELDS ---
+      
       setForm(defaultForm())
       setPreview('')
     } catch (error) {
@@ -41,7 +64,8 @@ export default function ExpenseForm({ onAdd }){
     }
     const reader = new FileReader()
     reader.onload = () => {
-      setForm(f => ({ ...f, receipt: reader.result, receiptName: file.name }))
+      // reader.result is the base64 data URL expected by the DB
+      setForm(f => ({ ...f, receipt: reader.result, receiptName: file.name })) 
       if(file.type.startsWith('image/')){
         setPreview(reader.result)
       } else {
@@ -61,6 +85,7 @@ export default function ExpenseForm({ onAdd }){
           <option>Food</option><option>Transport</option><option>Utilities</option><option>Entertainment</option><option>Shopping</option><option>Other</option>
         </select>
         <input type="number" step="0.01" className="input" placeholder="Amount" value={form.amount} onChange={e=>setForm({...form, amount:e.target.value})} />
+        {/* Input for notes */}
         <input className="input" placeholder="Notes (optional)" value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})} />
       </div>
       <div className="flex flex-wrap items-center gap-3">
