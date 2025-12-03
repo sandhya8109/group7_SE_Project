@@ -77,8 +77,9 @@ Backend code is located inside:
   backend/
 1. Create the MySQL database
   mysql -u <user> -p < backend/Database/finance_schema.sql
+  OPTIONAL: For mock data run backend/Database/mockdata.sql
 2. Install Python dependencies
-  pip install flask flask-cors pymysql werkzeug
+  py -m pip install flask_cors pymysql python-dateutil PyJWT
 3. Configure environment variables
   export MYSQL_HOST=localhost
   export MYSQL_USER=root
